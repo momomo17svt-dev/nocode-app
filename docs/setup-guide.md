@@ -1,0 +1,80 @@
+# セットアップ手順書
+
+ノーコードAppをWindows 10/11のLAN内・オフライン環境で動かす手順です。通常はDocker版を推奨します。
+
+## Docker版
+
+1. Docker Desktopをインストールして起動します。
+2. `start_docker.bat`を実行します。
+3. 初回に表示される管理者ログインIDとパスワードを安全な場所へ保存します。
+4. <http://localhost:5173>を開きます。
+
+詳細は[docker-guide.md](docker-guide.md)を参照してください。
+
+## DockerなしのWindows版
+
+### 前提
+
+- Node.js 22
+- PostgreSQL 16以降
+- npm依存関係を取得できる環境、または事前に作成したオフライン配布物
+
+ポータブルPostgreSQLはプロジェクト直下の`pgsql/`へ配置します。別の場所にある場合は、起動前に`NOCODEAPP_PG_HOME`へPostgreSQLのルートディレクトリを設定してください。
+
+```powershell
+$env:NOCODEAPP_PG_HOME = 'C:\path\to\postgresql'
+```
+
+### 初回セットアップ
+
+`setup.bat`を実行します。次の処理が自動実行されます。
+
+1. `backend/.env`とランダムな秘密情報を作成
+2. PostgreSQLの初期化と`nocode_db`作成
+3. Prismaマイグレーション
+4. 初期管理者の作成
+5. バックエンドのビルドとフロントエンド依存関係の確認
+
+管理者パスワードは環境設定を新規作成したときだけ画面に表示されます。固定の共通パスワードはありません。
+
+### 起動
+
+`start_server.bat`を実行し、<http://localhost:5173>を開きます。
+
+bat版のバックエンドは3001番、フロントエンドは5173番を使用します。LAN内の別PCから直接アクセスする場合は、`backend/.env`の`CORS_ORIGINS`へ実際のフロントエンドURLを追加し、Windowsファイアウォールも設定してください。
+
+## 手動セットアップ
+
+`backend/.env.example`を`backend/.env`へコピーし、`change_me`をすべて安全な値へ変更します。
+
+```bash
+cd backend
+npm ci
+npm run db:setup
+npm run start
+```
+
+別のターミナルでフロントエンドを起動します。
+
+```bash
+cd frontend
+npm ci
+npm run dev -- --host 0.0.0.0
+```
+
+## バックアップ
+
+DBと`storage/attachments/`を必ずセットで保存します。DBダンプや添付は機密情報を含む可能性があるため、Gitへ追加しないでください。
+
+```text
+export-db.bat
+```
+
+Docker版のバックアップは[docker-guide.md](docker-guide.md)を参照してください。
+
+## 運用上の注意
+
+- `JWT_SECRET`を変更すると既存のログイン状態は無効になります。
+- `.env`と`backend/.env`を共有・公開しないでください。
+- Docker版とbat版は同じ5173番ポートを使うため同時起動できません。
+- インターネットへ直接公開する場合は[SECURITY.md](../SECURITY.md)の追加対策が必要です。

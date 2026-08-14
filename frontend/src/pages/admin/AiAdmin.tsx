@@ -1,0 +1,252 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { RefreshCw, Loader2, Database, Save, Library, ArrowRight, DownloadCloud, ListOrdered } from 'lucide-react';
+import { api } from '../../lib/api';
+import { Layout } from '../../components/Layout';
+import { Button } from '../../components/ui/Button';
+import { Field } from '../../components/ui/Field';
+import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { aiApi, type LlmConfig, type IndexStatus, type LlmHealth, type ModelInfo } from '../../lib/ai';
+import { LlmStatusBadge } from '../../components/ai/LlmStatusBadge';
+
+interface AppLite { id: string; name: string }
+
+export function AiAdmin() {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const [cfg, setCfg] = useState<LlmConfig | null>(null);
+  const [health, setHealth] = useState<LlmHealth | null>(null);
+  const [apps, setApps] = useState<AppLite[]>([]);
+  const [status, setStatus] = useState<IndexStatus | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
+  const [loadingKind, setLoadingKind] = useState<'chat' | 'embed' | null>(null);
+
+  const loadStatus = () => aiApi.status().then(setStatus).catch(() => setStatus(null));
+
+  // 選択中のモデルをLM Studio側へ即ロード（旧モデル解放込み）
+  const loadNow = async (kind: 'chat' | 'embed') => {
+    const model = kind === 'chat' ? cfg?.chatModel : cfg?.embedModel;
+    setLoadingKind(kind);
+    try {
+      const h = await aiApi.loadModel(kind, model || undefined);
+      setHealth(h);
+      toast.success(kind === 'chat' ? 'チャットモデルを読み込みました' : '埋め込みモデルを読み込みました');
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setLoadingKind(null);
+    }
+  };
+
+  useEffect(() => {
+    aiApi.getConfig().then(setCfg).catch((e) => toast.error(e.message));
+    aiApi.health().then(setHealth).catch(() => {});
+    api.get('/apps').then((rows) => setApps((rows || []).map((a: any) => ({ id: a.id, name: a.name })))).catch(() => {});
+    loadStatus();
+    // eslint-disable-next-line
+  }, []);
+
+  const patch = (p: Partial<LlmConfig>) => setCfg((c) => (c ? { ...c, ...p } : c));
+
+  // 用途別のモデル候補（LM Studio から取得した種別で振り分け）
+  const list: ModelInfo[] = health?.modelList || [];
+  const isEmbed = (m: ModelInfo) => m.type === 'embeddings' || (m.type === 'unknown' && /embed/i.test(m.id));
+  const chatModels = list.filter((m) => !isEmbed(m));
+  const embedModels = list.filter((m) => isEmbed(m));
+  const optLabel = (m: ModelInfo) => `${m.id}${m.loaded ? '（ロード済み）' : ''}`;
+
+  const save = async () => {
+    if (!cfg) return;
+    setSaving(true);
+    try {
+      const saved = await aiApi.saveConfig(cfg);
+      setCfg(saved);
+      toast.success('AI設定を保存しました');
+      aiApi.health().then(setHealth).catch(() => {});
+      loadStatus();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleApp = (id: string) => {
+    if (!cfg) return;
+    const set = new Set(cfg.indexedAppIds);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    patch({ indexedAppIds: Array.from(set) });
+  };
+
+  const reindex = async () => {
+    if (!(await confirm({ message: '対象アプリと全文書を再インデックスします。データ量により時間がかかる場合があります。実行しますか？', confirmText: '再インデックス' }))) return;
+    setReindexing(true);
+    try {
+      const r: any = await aiApi.reindex();
+      toast.success(`再インデックス完了：レコード${r.recordChunks}件 / 文書${r.docChunks}件のチャンク`);
+      loadStatus();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setReindexing(false);
+    }
+  };
+
+  if (!cfg) {
+    return <Layout><div className="py-20 grid place-items-center text-muted"><Loader2 className="size-6 animate-spin" /></div></Layout>;
+  }
+
+  return (
+    <Layout>
+      <h1 className="text-xl font-bold tracking-tight mb-5">AI設定</h1>
+
+      <div className="mb-5"><LlmStatusBadge /></div>
+
+      {/* 接続設定 */}
+      <section className="card p-5 mb-5">
+        <h4 className="font-semibold text-sm mb-4">接続設定（LM Studio 等の OpenAI 互換サーバ）</h4>
+
+        <label className="flex items-center gap-2.5 mb-4 cursor-pointer">
+          <input type="checkbox" className="size-4" checked={cfg.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
+          <span className="text-sm font-medium">AI機能を有効にする</span>
+          <span className="text-xs text-muted">（保存時のレコード自動インデックスを含む）</span>
+        </label>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="ベースURL" className="sm:col-span-2">
+            <input className="input" value={cfg.baseUrl} onChange={(e) => patch({ baseUrl: e.target.value })} placeholder="http://localhost:1234/v1" />
+          </Field>
+          <Field label="チャットモデル" hint={cfg.chatModel ? '固定指定中' : `自動：${health?.resolvedChatModel || 'ロード済みのチャットモデルを使用'}`}>
+            <div className="flex items-center gap-2">
+              <select className="input flex-1" value={cfg.chatModel} onChange={(e) => patch({ chatModel: e.target.value })}>
+                <option value="">自動（ロード済みを使用）</option>
+                {chatModels.map((m) => <option key={m.id} value={m.id}>{optLabel(m)}</option>)}
+                {cfg.chatModel && !chatModels.some((m) => m.id === cfg.chatModel) && <option value={cfg.chatModel}>{cfg.chatModel}（未検出）</option>}
+              </select>
+              <Button size="sm" icon={loadingKind === 'chat' ? <Loader2 className="size-4 animate-spin" /> : <DownloadCloud className="size-4" />}
+                loading={loadingKind === 'chat'} disabled={!cfg.chatModel} onClick={() => loadNow('chat')} title="選択モデルをLM Studioへ読み込む">読込</Button>
+            </div>
+          </Field>
+          <Field label="埋め込みモデル" hint={cfg.embedModel ? 'RAG・検索に使用（固定指定中）' : `自動：${health?.resolvedEmbedModel || '埋め込みモデルが必要です'}`}>
+            <div className="flex items-center gap-2">
+              <select className="input flex-1" value={cfg.embedModel} onChange={(e) => patch({ embedModel: e.target.value })}>
+                <option value="">自動（ロード済みを使用）</option>
+                {embedModels.map((m) => <option key={m.id} value={m.id}>{optLabel(m)}</option>)}
+                {cfg.embedModel && !embedModels.some((m) => m.id === cfg.embedModel) && <option value={cfg.embedModel}>{cfg.embedModel}（未検出）</option>}
+              </select>
+              <Button size="sm" icon={loadingKind === 'embed' ? <Loader2 className="size-4 animate-spin" /> : <DownloadCloud className="size-4" />}
+                loading={loadingKind === 'embed'} disabled={!cfg.embedModel} onClick={() => loadNow('embed')} title="選択モデルをLM Studioへ読み込む">読込</Button>
+            </div>
+          </Field>
+
+          <Field label={`温度 (${cfg.temperature})`}>
+            <input type="range" min={0} max={1} step={0.1} className="w-full" value={cfg.temperature} onChange={(e) => patch({ temperature: Number(e.target.value) })} />
+          </Field>
+          <Field label="最大トークン数">
+            <input type="number" className="input" value={cfg.maxTokens} onChange={(e) => patch({ maxTokens: Number(e.target.value) })} />
+          </Field>
+          <Field label="タイムアウト(ms)">
+            <input type="number" className="input" value={cfg.timeoutMs} onChange={(e) => patch({ timeoutMs: Number(e.target.value) })} />
+          </Field>
+          <Field label="チャンク文字数 / 重なり">
+            <div className="flex items-center gap-2">
+              <input type="number" className="input" value={cfg.chunkSize} onChange={(e) => patch({ chunkSize: Number(e.target.value) })} />
+              <span className="text-muted">/</span>
+              <input type="number" className="input" value={cfg.chunkOverlap} onChange={(e) => patch({ chunkOverlap: Number(e.target.value) })} />
+            </div>
+          </Field>
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <Button variant="primary" icon={<Save className="size-4" />} loading={saving} onClick={save}>設定を保存</Button>
+        </div>
+      </section>
+
+      {/* キュー・モデル管理 */}
+      <section className="card p-5 mb-5">
+        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+          <h4 className="font-semibold text-sm flex items-center gap-2"><ListOrdered className="size-4 text-muted" />キュー・モデル管理</h4>
+          {health?.queue && (
+            <span className="text-xs text-muted tabular-nums">処理中 {health.queue.running} / 順番待ち {health.queue.waiting}</span>
+          )}
+        </div>
+        <p className="text-xs text-muted mb-4">ローカルLLMは同時処理に限りがあります。混雑時はリクエストを順番待ちにし、上限を超えた分のみ「混雑」エラーにします。</p>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="同時実行数" hint="LM Studioへ同時に流す数（通常1）">
+            <input type="number" min={1} max={8} className="input" value={cfg.maxConcurrency} onChange={(e) => patch({ maxConcurrency: Number(e.target.value) })} />
+          </Field>
+          <Field label="順番待ちの上限" hint="超過で混雑エラー">
+            <input type="number" min={1} max={500} className="input" value={cfg.maxQueue} onChange={(e) => patch({ maxQueue: Number(e.target.value) })} />
+          </Field>
+          <Field label="順番待ちタイムアウト(ms)">
+            <input type="number" min={1000} max={600000} className="input" value={cfg.queueTimeoutMs} onChange={(e) => patch({ queueTimeoutMs: Number(e.target.value) })} />
+          </Field>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" className="size-4" checked={cfg.autoLoadModel} onChange={(e) => patch({ autoLoadModel: e.target.checked })} />
+            <span className="text-sm font-medium">モデル変更時にLM Studioへ自動で読み込む</span>
+          </label>
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" className="size-4" checked={cfg.unloadPrevious} onChange={(e) => patch({ unloadPrevious: e.target.checked })} />
+            <span className="text-sm font-medium">新モデル読込時に直前のモデルを解放する</span>
+          </label>
+          <Field label="lms CLI のパス（任意）" hint="旧モデル解放に使用（例: C:\\Users\\…\\.lmstudio\\bin\\lms.exe）。空のときは LM Studio 側の自動退避（Max loaded models=1 等）に委ねます。">
+            <input className="input" value={cfg.lmsPath} onChange={(e) => patch({ lmsPath: e.target.value })} placeholder="（空＝CLIアンロード無効）" />
+          </Field>
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <Button variant="primary" icon={<Save className="size-4" />} loading={saving} onClick={save}>設定を保存</Button>
+        </div>
+      </section>
+
+      {/* インデックス対象 */}
+      <section className="card p-5 mb-5">
+        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+          <h4 className="font-semibold text-sm flex items-center gap-2"><Database className="size-4 text-muted" />インデックス対象アプリ</h4>
+          <Button size="sm" icon={reindexing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} loading={reindexing} onClick={reindex}>全体を再インデックス</Button>
+        </div>
+
+        {status && (
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted mb-4">
+            <span>インデックス済みチャンク: <b className="text-content tabular-nums">{status.total}</b>（レコード {status.recordChunks} / 文書 {status.docChunks}）</span>
+            <span>埋め込みモデル: <b className="text-content">{status.embedModel || '未設定'}</b></span>
+            {status.modelMismatch && <span className="text-warning">⚠ 既存ベクトルと現在の埋め込みモデルが異なります。再インデックスを推奨します。</span>}
+          </div>
+        )}
+
+        <p className="text-xs text-muted mb-2">チェックしたアプリのレコードを検索・RAGの対象にします（保存後、レコード更新時に自動でインデックスされます）。</p>
+        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {apps.map((a) => (
+            <label key={a.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm cursor-pointer hover:bg-surface-2">
+              <input type="checkbox" className="size-4" checked={cfg.indexedAppIds.includes(a.id)} onChange={() => toggleApp(a.id)} />
+              <span className="truncate">{a.name}</span>
+            </label>
+          ))}
+          {apps.length === 0 && <p className="text-sm text-muted">アプリがありません。</p>}
+        </div>
+        <p className="text-[11px] text-muted mt-2">※ 対象アプリの変更は「設定を保存」で反映され、その後に「全体を再インデックス」で既存レコードを取り込みます。</p>
+      </section>
+
+      {/* ナレッジ文書の登録は「ナレッジ」画面へ移動 */}
+      <section className="card p-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-2">
+            <Library className="size-4 text-muted mt-0.5 shrink-0" />
+            <div>
+              <h4 className="font-semibold text-sm">ナレッジ文書の登録・管理</h4>
+              <p className="text-xs text-muted mt-0.5">マニュアル・FAQ・行政文書などの登録／編集／削除は「ナレッジ」画面で行えます（管理者のみ操作可能）。</p>
+            </div>
+          </div>
+          <Link to="/knowledge" className="btn btn-primary btn-sm gap-1.5 shrink-0">ナレッジ画面を開く<ArrowRight className="size-4" /></Link>
+        </div>
+      </section>
+    </Layout>
+  );
+}

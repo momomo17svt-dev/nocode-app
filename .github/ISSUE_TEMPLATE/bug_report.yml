@@ -1,0 +1,40 @@
+name: Bug report
+description: 再現可能な不具合を報告します
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 秘密情報、実データ、パスワード、トークンを記載しないでください。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する結果
+    validations:
+      required: true
+  - type: dropdown
+    id: startup
+    attributes:
+      label: 起動方法
+      options:
+        - Docker
+        - Windows bat
+        - 手動起動
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: バージョン・コミット

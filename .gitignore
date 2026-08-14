@@ -1,0 +1,42 @@
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Dependencies and generated output
+node_modules/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+
+# Runtime data and private backups
+storage/attachments/*
+!storage/attachments/.gitkeep
+storage/tiles/*
+!storage/tiles/README.md
+!storage/tiles/.gitkeep
+migration/*.sql
+!migration/README.md
+.local-backup/
+backup*.sql
+backup*.dump
+
+# Bundled runtimes are distributed separately from the source repository
+postgresql.zip
+pgsql/
+pg-runtime/
+sample-csv/
+
+# Local tooling and OS files
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local release output
+release/
