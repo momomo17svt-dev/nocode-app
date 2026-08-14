@@ -18,7 +18,7 @@
 
 `cd frontend && npm test`
 
-VitestとTesting Libraryで計算処理、APIキャッシュ/重複排除、Cookie/CSRF、認証失効、ログイン画面、監査ログのページ移動を検証します。
+VitestとTesting Libraryで計算処理、APIキャッシュ/重複排除、Cookie/CSRF、認証失効、ログイン画面、監査ログのページ移動、ダッシュボード切替の表示上限と同名判別を検証します。
 
 ### 静的検査とビルド
 

@@ -176,6 +176,8 @@ export class DashboardsService {
       canEdit: this.canEditWidgets(row, userId, role, groupIds),
       widgets: Array.isArray(layout.widgets) ? layout.widgets : [],
       sortOrder: row.sortOrder,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
   }
 

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Gauge, Plus, Pencil, Trash2, GripVertical, Check, Share2, RefreshCw, LayoutGrid, Settings2, MonitorPlay,
+  ChevronDown, Search,
 } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import { api } from '../lib/api';
@@ -24,6 +25,7 @@ interface DirGroup { id: string; name: string }
 
 const LS_KEY = 'dash:selected';
 const PRIVATE_ACCESS: AccessConfig = { mode: 'private', shares: [] };
+const MAX_VISIBLE_DASHBOARDS = 6;
 
 export function Dashboard() {
   const user = getUser();
@@ -39,6 +41,8 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [dashboardQuery, setDashboardQuery] = useState('');
+  const dashboardMenuRef = useRef<HTMLDetailsElement>(null);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingWidget, setEditingWidget] = useState<Widget | null>(null);
@@ -50,6 +54,59 @@ export function Dashboard() {
   const canManage = !!selected?.canManage; // 名前/共有/削除
   const canEditW = !!selected?.canEdit;     // ウィジェット編集
   const canPublic = canCreateApp(user);
+
+  const duplicatePosition = useMemo(() => {
+    const totals = new Map<string, number>();
+    const seen = new Map<string, number>();
+    const result = new Map<string, { current: number; total: number }>();
+    dashboards.forEach((dashboard) => totals.set(dashboard.name, (totals.get(dashboard.name) || 0) + 1));
+    dashboards.forEach((dashboard) => {
+      const current = (seen.get(dashboard.name) || 0) + 1;
+      seen.set(dashboard.name, current);
+      result.set(dashboard.id, { current, total: totals.get(dashboard.name) || 1 });
+    });
+    return result;
+  }, [dashboards]);
+
+  const visibleDashboards = useMemo(() => {
+    const prioritized = selected
+      ? [selected, ...dashboards.filter((dashboard) => dashboard.id !== selected.id)]
+      : dashboards;
+    return prioritized.slice(0, MAX_VISIBLE_DASHBOARDS);
+  }, [dashboards, selected]);
+
+  const appNames = useMemo(() => new Map(apps.map((app) => [app.id, app.name])), [apps]);
+  const matchingDashboards = useMemo(() => {
+    const query = dashboardQuery.trim().toLocaleLowerCase('ja');
+    if (!query) return dashboards;
+    return dashboards.filter((dashboard) => {
+      const targets = dashboard.widgets
+        .map((widget) => widget.appId && appNames.get(widget.appId))
+        .filter(Boolean)
+        .join(' ');
+      return `${dashboard.name} ${targets}`.toLocaleLowerCase('ja').includes(query);
+    });
+  }, [appNames, dashboardQuery, dashboards]);
+
+  const displayDashboardName = (dashboard: DashboardDef) => {
+    const duplicate = duplicatePosition.get(dashboard.id);
+    return duplicate && duplicate.total > 1
+      ? `${dashboard.name} ${duplicate.current}/${duplicate.total}`
+      : dashboard.name;
+  };
+
+  const dashboardTarget = (dashboard: DashboardDef) => {
+    const targets = Array.from(new Set(
+      dashboard.widgets.map((widget) => widget.appId && appNames.get(widget.appId)).filter((name): name is string => !!name),
+    ));
+    return targets.length ? targets.join('・') : 'アプリ指定なし';
+  };
+
+  const selectDashboard = (id: string) => {
+    setSelectedId(id);
+    setDashboardQuery('');
+    dashboardMenuRef.current?.removeAttribute('open');
+  };
 
   // 初期ロード
   useEffect(() => {
@@ -222,20 +279,61 @@ export function Dashboard() {
 
       {/* ダッシュボード切替 */}
       {dashboards.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap mb-5">
-          {dashboards.map((d) => (
-            <button
-              key={d.id}
-              onClick={() => setSelectedId(d.id)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                d.id === selectedId ? 'border-primary bg-primary-soft text-primary-soft-fg font-medium' : 'border-border bg-surface hover:bg-surface-2'
-              }`}
-            >
-              <LayoutGrid className="size-3.5" />
-              <span className="truncate max-w-[12rem]">{d.name}</span>
-              {d.isShared && <Share2 className="size-3 text-muted" />}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 mb-5 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 overflow-x-auto pb-1" data-testid="dashboard-shortcuts">
+            {visibleDashboards.map((d) => (
+              <button
+                key={d.id}
+                onClick={() => selectDashboard(d.id)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  d.id === selectedId ? 'border-primary bg-primary-soft text-primary-soft-fg font-medium' : 'border-border bg-surface hover:bg-surface-2'
+                }`}
+                title={`${displayDashboardName(d)}（${dashboardTarget(d)}）`}
+              >
+                <LayoutGrid className="size-3.5" />
+                <span className="truncate max-w-[12rem]">{displayDashboardName(d)}</span>
+                {d.isShared && <Share2 className="size-3 text-muted" />}
+              </button>
+            ))}
+          </div>
+          {dashboards.length > MAX_VISIBLE_DASHBOARDS && (
+            <details ref={dashboardMenuRef} className="relative shrink-0">
+              <summary className="btn btn-ghost btn-sm gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                すべて <span className="badge badge-muted tabular-nums">{dashboards.length}</span><ChevronDown className="size-3.5" />
+              </summary>
+              <div className="absolute right-0 z-30 mt-2 w-[23rem] max-w-[calc(100vw-2rem)] card p-2 shadow-[var(--shadow-pop)] animate-pop-in">
+                <div className="flex items-center gap-2 px-2 py-1.5 mb-1 rounded-lg border border-border bg-surface-2">
+                  <Search className="size-4 text-muted shrink-0" />
+                  <input
+                    className="w-full bg-transparent text-sm outline-none"
+                    value={dashboardQuery}
+                    onChange={(event) => setDashboardQuery(event.target.value)}
+                    placeholder="名前・対象アプリで検索"
+                    aria-label="ダッシュボードを検索"
+                  />
+                </div>
+                <div className="max-h-80 overflow-auto space-y-0.5" data-testid="dashboard-menu-list">
+                  {matchingDashboards.map((dashboard) => (
+                    <button
+                      key={dashboard.id}
+                      className={`w-full rounded-lg px-3 py-2 text-left hover:bg-surface-2 ${dashboard.id === selectedId ? 'bg-primary-soft text-primary-soft-fg' : ''}`}
+                      onClick={() => selectDashboard(dashboard.id)}
+                    >
+                      <span className="flex items-center gap-1.5 text-sm font-medium">
+                        <LayoutGrid className="size-3.5 shrink-0" />{displayDashboardName(dashboard)}
+                        {dashboard.isShared && <Share2 className="size-3 text-muted" />}
+                      </span>
+                      <span className="block mt-0.5 text-xs text-muted truncate">
+                        対象: {dashboardTarget(dashboard)}
+                        {dashboard.createdAt ? `・作成 ${new Date(dashboard.createdAt).toLocaleString('ja-JP')}` : ''}
+                      </span>
+                    </button>
+                  ))}
+                  {matchingDashboards.length === 0 && <p className="px-3 py-6 text-center text-sm text-muted">一致するダッシュボードがありません</p>}
+                </div>
+              </div>
+            </details>
+          )}
         </div>
       )}
 

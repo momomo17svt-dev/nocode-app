@@ -301,11 +301,29 @@ export class AppsService {
    */
   async createFromSuite(
     suiteId: string,
-    data: { withSamples?: boolean },
+    data: { withSamples?: boolean; allowDuplicate?: boolean },
     creatorId: string,
   ) {
     const suite = getSuite(suiteId);
     if (!suite) throw new NotFoundException('スイートが見つかりません');
+
+    if (!data.allowDuplicate) {
+      const names = suite.members.map((member) => member.name?.trim() || member.template.name);
+      const existing = await this.prisma.app.findMany({
+        where: { createdBy: creatorId, name: { in: names } },
+        select: { name: true },
+      });
+      const counts = new Map<string, number>();
+      for (const app of existing) counts.set(app.name, (counts.get(app.name) || 0) + 1);
+      const completeSets = names.length > 0 ? Math.min(...names.map((name) => counts.get(name) || 0)) : 0;
+      if (completeSets > 0) {
+        throw new ConflictException({
+          code: 'SUITE_ALREADY_EXISTS',
+          message: `同じ連携アプリ群がすでに${completeSets}セットあります。重複して作成する場合は確認が必要です。`,
+          existingSets: completeSets,
+        });
+      }
+    }
 
     // memberKey → 作成済みアプリID のマップ。
     const idMap = new Map<string, string>();

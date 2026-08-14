@@ -171,4 +171,8 @@ export class CreateFromSuiteDto {
   @IsOptional()
   @IsBoolean()
   withSamples?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  allowDuplicate?: boolean;
 }

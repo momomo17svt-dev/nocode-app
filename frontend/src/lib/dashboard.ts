@@ -66,6 +66,8 @@ export interface DashboardDef {
   canEdit: boolean;
   widgets: Widget[];
   sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export const ACCESS_MODE_LABELS: Record<AccessMode, string> = {
