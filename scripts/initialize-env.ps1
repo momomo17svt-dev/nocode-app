@@ -68,11 +68,18 @@ if ($Mode -eq 'Docker') {
         POSTGRES_PASSWORD = (New-RandomHex 24)
         JWT_SECRET = $jwtSecret
         JWT_EXPIRES_IN = '8h'
+        AUTH_COOKIE_SECURE = 'false'
+        AUTH_COOKIE_MAX_AGE_MS = '28800000'
+        AUTH_EXPOSE_BEARER_TOKEN = 'false'
         INITIAL_ADMIN_LOGIN = 'admin'
         INITIAL_ADMIN_NAME = 'Administrator'
         INITIAL_ADMIN_PASSWORD = $adminPassword
         CORS_ORIGINS = ''
         PUBLIC_FORM_RATE_LIMIT_PER_MINUTE = '10'
+        SLOW_REQUEST_MS = '1000'
+        DB_SLOW_QUERY_MS = '500'
+        HTTP_LOG_MODE = 'slow'
+        VITE_API_TIMEOUT_MS = '20000'
         LLM_BASE_URL = 'http://host.docker.internal:1234/v1'
     })
 }
@@ -83,11 +90,17 @@ else {
         DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/nocode_db?schema=public'
         JWT_SECRET = $jwtSecret
         JWT_EXPIRES_IN = '8h'
+        AUTH_COOKIE_SECURE = 'false'
+        AUTH_COOKIE_MAX_AGE_MS = '28800000'
+        AUTH_EXPOSE_BEARER_TOKEN = 'false'
         INITIAL_ADMIN_LOGIN = 'admin'
         INITIAL_ADMIN_NAME = 'Administrator'
         INITIAL_ADMIN_PASSWORD = $adminPassword
         CORS_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173'
         PUBLIC_FORM_RATE_LIMIT_PER_MINUTE = '10'
+        SLOW_REQUEST_MS = '1000'
+        DB_SLOW_QUERY_MS = '500'
+        HTTP_LOG_MODE = 'slow'
         LLM_BASE_URL = 'http://localhost:1234/v1'
     })
 }

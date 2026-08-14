@@ -65,7 +65,7 @@ export function RecordEditor() {
         setLoading(false);
       }
     })();
-  }, [appId, recordId, isEdit]);
+  }, [appId, recordId, isEdit, toast]);
 
   const setValue = (code: string, value: any) => {
     setFormData((d) => ({ ...d, [code]: value }));

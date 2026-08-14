@@ -128,7 +128,7 @@ export function AppList() {
     setLoading(true);
     api.get('/apps').then(setApps).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
   };
-  useEffect(load, []);
+  useEffect(load, [toast]);
 
   const loadTemplates = () => {
     setTplLoading(true);

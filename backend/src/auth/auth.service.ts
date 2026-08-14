@@ -2,6 +2,9 @@ import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import type { User } from '@prisma/client';
+
+export type AuthenticatedUser = Omit<User, 'passwordHash'>;
 
 @Injectable()
 export class AuthService {
@@ -10,7 +13,7 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async validateUser(loginId: string, pass: string): Promise<any> {
+  async validateUser(loginId: string, pass: string): Promise<AuthenticatedUser | null> {
     const user = await this.usersService.findOne(loginId);
     // 無効化ユーザーはログイン不可
     if (user && user.isActive && (await bcrypt.compare(pass, user.passwordHash))) {
@@ -26,11 +29,14 @@ export class AuthService {
       // 仕様: 「存在しない」「パスワード違い」を区別しない汎用メッセージ
       throw new UnauthorizedException('ログイン情報が正しくありません');
     }
-    const payload = { loginId: user.loginId, sub: user.id, role: user.role };
     return {
-      access_token: this.jwtService.sign(payload),
+      access_token: this.issueToken({ userId: user.id, loginId: user.loginId, role: user.role }),
       user,
     };
+  }
+
+  issueToken(user: { userId: string; loginId: string; role: string }): string {
+    return this.jwtService.sign({ loginId: user.loginId, sub: user.userId, role: user.role });
   }
 
   /**

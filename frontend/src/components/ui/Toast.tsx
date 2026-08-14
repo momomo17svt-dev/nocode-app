@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
@@ -40,12 +40,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [remove],
   );
 
-  const api: ToastApi = {
-    show,
-    success: (m) => show(m, 'success'),
-    error: (m) => show(m, 'error'),
-    info: (m) => show(m, 'info'),
-  };
+  const api = useMemo<ToastApi>(
+    () => ({
+      show,
+      success: (message) => show(message, 'success'),
+      error: (message) => show(message, 'error'),
+      info: (message) => show(message, 'info'),
+    }),
+    [show],
+  );
 
   return (
     <Ctx.Provider value={api}>

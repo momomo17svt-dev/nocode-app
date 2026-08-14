@@ -5,13 +5,28 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EmbeddingService } from '../ai/embedding.service';
 import { PermissionService } from '../permissions/permission.service';
 import { evalFormula, evalRules, formatAutoNumber } from './compute.util';
+import { Prisma } from '@prisma/client';
 
 interface ListOptions {
   search?: string;
   filters?: Record<string, string>;
 }
 
-type TxClient = any;
+export interface RecordListCondition {
+  field: string;
+  op: 'contains' | 'eq' | 'ne' | 'gt' | 'lt' | 'empty' | 'notempty';
+  value?: string;
+}
+
+export interface RecordPageOptions {
+  page: number;
+  pageSize: number;
+  search?: string;
+  conditions?: RecordListCondition[];
+  sort?: { field: string; order: 'asc' | 'desc' } | null;
+}
+
+type TxClient = Prisma.TransactionClient;
 
 @Injectable()
 export class RecordsService {
@@ -102,6 +117,131 @@ export class RecordsService {
     }
 
     return filtered;
+  }
+
+  /**
+   * 一覧タブ向けのサーバー側ページ取得。検索・絞り込み・並び替えをPostgreSQLで実行し、
+   * レコード件数が増えても全件をNode.js/ブラウザへ転送しない。
+   */
+  async findPage(
+    appId: string,
+    opts: RecordPageOptions,
+    allowedCreatorIds?: string[] | null,
+    fieldScope?: { field: string; userIds: string[] } | null,
+  ) {
+    const page = Math.max(1, Math.floor(opts.page));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(opts.pageSize)));
+    const clauses: Prisma.Sql[] = [Prisma.sql`r."appId" = ${appId}`];
+
+    if (allowedCreatorIds) {
+      clauses.push(
+        allowedCreatorIds.length
+          ? Prisma.sql`r."createdBy" IN (${Prisma.join(allowedCreatorIds)})`
+          : Prisma.sql`FALSE`,
+      );
+    }
+    if (fieldScope) {
+      const scopedValue = Prisma.sql`COALESCE(r."dataJson" ->> ${fieldScope.field}, '')`;
+      clauses.push(
+        fieldScope.userIds.length
+          ? Prisma.sql`${scopedValue} IN (${Prisma.join(fieldScope.userIds)})`
+          : Prisma.sql`FALSE`,
+      );
+    }
+    if (opts.search?.trim()) {
+      clauses.push(
+        Prisma.sql`EXISTS (
+          SELECT 1 FROM jsonb_each_text(r."dataJson") AS entry
+          WHERE entry.value ILIKE ${`%${opts.search.trim()}%`}
+        )`,
+      );
+    }
+    for (const condition of (opts.conditions || []).slice(0, 20)) {
+      clauses.push(this.recordConditionSql(condition));
+    }
+
+    const whereSql = Prisma.sql`WHERE ${Prisma.join(clauses, ' AND ')}`;
+    const countRows = await this.prisma.$queryRaw<Array<{ count: bigint }>>(
+      Prisma.sql`SELECT COUNT(*)::bigint AS count FROM "Record" r ${whereSql}`,
+    );
+    const total = Number(countRows[0]?.count || 0);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const currentPage = Math.min(page, totalPages);
+    const offset = (currentPage - 1) * pageSize;
+    const orderSql = await this.recordOrderSql(appId, opts.sort);
+    const idRows = await this.prisma.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`
+        SELECT r.id
+        FROM "Record" r
+        ${whereSql}
+        ORDER BY ${orderSql}, r."createdAt" DESC, r.id ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      `,
+    );
+    const ids = idRows.map((row) => row.id);
+    const records = ids.length
+      ? await this.prisma.record.findMany({
+          where: { id: { in: ids } },
+          include: {
+            creator: { select: { loginId: true, name: true } },
+            updater: { select: { loginId: true, name: true } },
+          },
+        })
+      : [];
+    const byId = new Map(records.map((record) => [record.id, record]));
+    return {
+      items: ids.map((id) => byId.get(id)).filter(Boolean),
+      total,
+      page: currentPage,
+      pageSize,
+      totalPages,
+    };
+  }
+
+  private recordConditionSql(condition: RecordListCondition): Prisma.Sql {
+    const valueSql = Prisma.sql`COALESCE(r."dataJson" ->> ${condition.field}, '')`;
+    const value = String(condition.value ?? '');
+    switch (condition.op) {
+      case 'contains':
+        return Prisma.sql`${valueSql} ILIKE ${`%${value}%`}`;
+      case 'eq':
+        return Prisma.sql`${valueSql} = ${value}`;
+      case 'ne':
+        return Prisma.sql`${valueSql} <> ${value}`;
+      case 'empty':
+        return Prisma.sql`${valueSql} = ''`;
+      case 'notempty':
+        return Prisma.sql`${valueSql} <> ''`;
+      case 'gt':
+      case 'lt': {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return Prisma.sql`FALSE`;
+        const numericSql = Prisma.sql`CASE WHEN ${valueSql} ~ '^[+-]?[0-9]+([.][0-9]+)?$' THEN (${valueSql})::numeric ELSE 0 END`;
+        return condition.op === 'gt'
+          ? Prisma.sql`${numericSql} > ${number}`
+          : Prisma.sql`${numericSql} < ${number}`;
+      }
+      default:
+        return Prisma.sql`TRUE`;
+    }
+  }
+
+  private async recordOrderSql(
+    appId: string,
+    sort?: { field: string; order: 'asc' | 'desc' } | null,
+  ): Promise<Prisma.Sql> {
+    if (!sort?.field) return Prisma.sql`r."createdAt" DESC`;
+    const field = await this.prisma.field.findUnique({
+      where: { appId_fieldCode: { appId, fieldCode: sort.field } },
+      select: { fieldType: true },
+    });
+    if (!field) return Prisma.sql`r."createdAt" DESC`;
+    const direction = Prisma.raw(sort.order === 'asc' ? 'ASC' : 'DESC');
+    const valueSql = Prisma.sql`COALESCE(r."dataJson" ->> ${sort.field}, '')`;
+    if (field.fieldType === 'number' || field.fieldType === 'calc') {
+      return Prisma.sql`CASE WHEN ${valueSql} ~ '^[+-]?[0-9]+([.][0-9]+)?$' THEN (${valueSql})::numeric ELSE NULL END ${direction} NULLS LAST`;
+    }
+    return Prisma.sql`${valueSql} ${direction}`;
   }
 
   async findOne(id: string) {

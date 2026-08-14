@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -20,10 +20,16 @@ import { DashboardsModule } from './dashboards/dashboards.module';
 import { LlmModule } from './llm/llm.module';
 import { AiModule } from './ai/ai.module';
 import { PublicFormsModule } from './public-forms/public-forms.module';
+import { RequestObservabilityMiddleware } from './common/request-observability.middleware';
+import { CsrfProtectionMiddleware } from './auth/csrf-protection.middleware';
 
 @Module({
   imports: [PrismaModule, AuthModule, UsersModule, GroupsModule, AppsModule, RecordsModule, FieldsModule, ViewsModule, AppPermissionsModule, AttachmentsModule, AuditLogsModule, DirectoryModule, NotificationsModule, PortalModule, TilesModule, DashboardsModule, LlmModule, AiModule, PublicFormsModule],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, RequestObservabilityMiddleware, CsrfProtectionMiddleware],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestObservabilityMiddleware, CsrfProtectionMiddleware).forRoutes('*');
+  }
+}

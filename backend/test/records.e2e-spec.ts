@@ -87,6 +87,30 @@ describe('Records lifecycle (e2e)', () => {
     expect(filtered.body[0].dataJson.title).toBe('みかん');
   });
 
+  it('一覧をDB側で検索・条件指定・並び替え・ページ分割する', async () => {
+    await create({ title: '青森りんご', qty: 3, price: 100 }).expect(201);
+    await create({ title: '長野りんご', qty: 8, price: 120 }).expect(201);
+    await create({ title: 'みかん', qty: 20, price: 80 }).expect(201);
+
+    const response = await request(http())
+      .get('/api/records')
+      .query({
+        appId,
+        page: 1,
+        pageSize: 1,
+        search: 'りんご',
+        conditions: JSON.stringify([{ field: 'qty', op: 'gt', value: '2' }]),
+        sortField: 'qty',
+        sortOrder: 'desc',
+      })
+      .set(bearer(token))
+      .expect(200);
+
+    expect(response.body).toMatchObject({ total: 2, page: 1, pageSize: 1, totalPages: 2 });
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].dataJson.title).toBe('長野りんご');
+  });
+
   it('削除すると一覧から消える', async () => {
     const a = await create({ title: 'A', qty: 1, price: 1 }).expect(201);
     await create({ title: 'B', qty: 1, price: 1 }).expect(201);

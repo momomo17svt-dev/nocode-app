@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, csrfHeaders } from './api';
 import type { GovMeta, GovStructure } from './govdoc';
 
 // ===== 型 =====
@@ -181,17 +181,17 @@ export const aiApi = {
 };
 
 // ===== ストリーミング（SSE を fetch + ReadableStream で消費） =====
-/** SSE を消費し、(event, data) ごとに onEvent を呼ぶ汎用関数。EventSource はBearer不可のため fetch を使う。 */
+/** SSE を消費し、(event, data) ごとに onEvent を呼ぶ汎用関数。 */
 async function consumeSSE(
   endpoint: string,
   body: any,
   onEvent: (event: string, data: any) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const token = localStorage.getItem('token');
   const res = await fetch(`${api.base}${endpoint}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    credentials: 'include',
+    headers: csrfHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
     signal,
   });

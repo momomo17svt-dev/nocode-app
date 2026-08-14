@@ -8,27 +8,27 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(uuid())
-  loginId       String         @unique
-  name          String?        // 氏名（表示名）。null/空はログインIDで代替表示。
-  passwordHash  String
-  role          String         // SystemAdmin, GroupAdmin, AppCreator, StandardUser, Viewer
-  isActive      Boolean        @default(true)
+  id           String   @id @default(uuid())
+  loginId      String   @unique
+  name         String? // 氏名（表示名）。null/空はログインIDで代替表示。
+  passwordHash String
+  role         String // SystemAdmin, GroupAdmin, AppCreator, StandardUser, Viewer
+  isActive     Boolean  @default(true)
   // 所属部署（単一）。null=未所属。部署削除時は SetNull で未所属へ。
-  groupId       String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  groupId      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  group         Group?         @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  appsCreated   App[]
-  recordsCreated Record[]      @relation("RecordCreatedBy")
-  recordsUpdated Record[]      @relation("RecordUpdatedBy")
+  group          Group?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  appsCreated    App[]
+  recordsCreated Record[] @relation("RecordCreatedBy")
+  recordsUpdated Record[] @relation("RecordUpdatedBy")
 
   @@index([groupId])
 }
 
 model Group {
-  id          String         @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String
   description String?
   // 組織ツリー: 親部署。null=最上位。
@@ -36,51 +36,51 @@ model Group {
   // FKのSetNullは想定外経路で親だけ消えた場合に子を最上位へ退避させる安全網。
   parentId    String?
   // 同じ親の中での表示順（小さいほど上）。同値は createdAt 昇順。
-  sortOrder   Int            @default(0)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  parent      Group?         @relation("GroupHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children    Group[]        @relation("GroupHierarchy")
+  parent   Group?  @relation("GroupHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Group[] @relation("GroupHierarchy")
   // 所属ユーザー（1人1部署。User.groupId からの逆参照）
-  members     User[]
+  members  User[]
 
   @@index([parentId])
 }
 
 model App {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  status      String   @default("draft") // draft, published
+  id                String   @id @default(uuid())
+  name              String
+  description       String?
+  status            String   @default("draft") // draft, published
   // レコード単位の公開範囲: all=アプリ権限どおり全件 / owner=作成者本人(と管理者/所有者)のみ
-  recordViewScope String @default("all") // all, owner, org
-  recordEditScope String @default("all") // all, owner, org
+  recordViewScope   String   @default("all") // all, owner, org
+  recordEditScope   String   @default("all") // all, owner, org
   // レコードを「対象社員フィールド基準」で絞る場合の user_select 項目コード。
   // 設定時、非特権ユーザーは対象社員が自分の部署ツリー内のレコードのみ閲覧/編集できる。
-  recordScopeField String?
+  recordScopeField  String?
   // 追加権限のみのユーザーが「自分が作成したレコード」を編集/削除できるか
   // (canEdit/canDelete を持たなくても、本人が作成したレコードに限り操作を許可する)
-  creatorEditOwn   Boolean @default(false)
-  creatorDeleteOwn Boolean @default(false)
+  creatorEditOwn    Boolean  @default(false)
+  creatorDeleteOwn  Boolean  @default(false)
   // プロセス管理(ワークフロー)定義: { enabled, statusField, statuses:[], actions:[{from,to,label,approver?}] }
-  processConfig Json?
+  processConfig     Json?
   // 期限リマインド設定: { enabled, dueDateField, assigneeField, daysBefore }
-  reminderConfig Json?
+  reminderConfig    Json?
   // アプリ作成者が定義するLLM活用設定: { actions:[{ id, name, prompt, output:'show'|'field', targetField?, icon? }] }
-  aiConfig    Json?
+  aiConfig          Json?
   // 帳票（印刷/PDF）テンプレート定義: { templates:[{ id, name, paper, orientation, title, subtitle?, showDate, blocks:[], footer? }] }
-  reportConfig Json?
+  reportConfig      Json?
   // 匿名公開フォーム: 有効化するとトークン付きURLからログイン不要で投稿できる
-  publicFormEnabled Boolean @default(false)
-  publicFormToken   String? @unique
+  publicFormEnabled Boolean  @default(false)
+  publicFormToken   String?  @unique
   // 公開フォームの表示設定: { title?, description?, thankYouMessage? }（未設定はname/descにフォールバック）
   publicFormConfig  Json?
-  createdBy   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdBy         String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  creator     User     @relation(fields: [createdBy], references: [id])
+  creator     User            @relation(fields: [createdBy], references: [id])
   permissions AppPermission[]
   fields      Field[]
   views       View[]
@@ -88,100 +88,105 @@ model App {
 }
 
 model AppPermission {
-  id          String   @id @default(uuid())
-  appId       String
-  targetType  String   // All, User, Group
-  targetId    String?  // userId or groupId, null if All
-  canView     Boolean  @default(false)
-  canAdd      Boolean  @default(false)
-  canEdit     Boolean  @default(false)
-  canDelete   Boolean  @default(false)
-  canManage   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  appId      String
+  targetType String // All, User, Group
+  targetId   String? // userId or groupId, null if All
+  canView    Boolean  @default(false)
+  canAdd     Boolean  @default(false)
+  canEdit    Boolean  @default(false)
+  canDelete  Boolean  @default(false)
+  canManage  Boolean  @default(false)
+  createdAt  DateTime @default(now())
 
-  app         App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
 }
 
 model Field {
-  id          String   @id @default(uuid())
-  appId       String
-  fieldCode   String
-  fieldType   String   // text, number, date, select, file, etc.
-  label       String
-  required    Boolean  @default(false)
-  settings    Json?    // select options, validation rules, etc.
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(uuid())
+  appId     String
+  fieldCode String
+  fieldType String // text, number, date, select, file, etc.
+  label     String
+  required  Boolean  @default(false)
+  settings  Json? // select options, validation rules, etc.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  app         App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@unique([appId, fieldCode])
 }
 
 model View {
-  id          String   @id @default(uuid())
-  appId       String
-  name        String
-  isShared    Boolean  @default(true)
-  createdBy   String?
-  conditions  Json?    // Filter conditions
-  columns     Json?    // Array of fieldCodes to display
-  sort        Json?    // Sort rules
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(uuid())
+  appId      String
+  name       String
+  isShared   Boolean  @default(true)
+  createdBy  String?
+  conditions Json? // Filter conditions
+  columns    Json? // Array of fieldCodes to display
+  sort       Json? // Sort rules
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  app         App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
 }
 
 model Record {
-  id          String   @id @default(uuid())
-  appId       String
-  createdBy   String
-  updatedBy   String
-  dataJson    Json     // Business data payload
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(uuid())
+  appId     String
+  createdBy String
+  updatedBy String
+  dataJson  Json // Business data payload
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  app         App      @relation(fields: [appId], references: [id], onDelete: Cascade)
-  creator     User     @relation("RecordCreatedBy", fields: [createdBy], references: [id])
-  updater     User     @relation("RecordUpdatedBy", fields: [updatedBy], references: [id])
+  app         App             @relation(fields: [appId], references: [id], onDelete: Cascade)
+  creator     User            @relation("RecordCreatedBy", fields: [createdBy], references: [id])
+  updater     User            @relation("RecordUpdatedBy", fields: [updatedBy], references: [id])
   comments    RecordComment[]
   histories   RecordHistory[]
   attachments Attachment[]
+
+  @@index([appId, createdAt(sort: Desc)])
+  @@index([appId, updatedAt(sort: Desc)])
+  @@index([appId, createdBy])
+  @@index([dataJson], type: Gin)
 }
 
 model RecordComment {
-  id          String   @id @default(uuid())
-  recordId    String
-  userId      String
-  comment     String
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid())
+  recordId  String
+  userId    String
+  comment   String
+  createdAt DateTime @default(now())
 
-  record      Record   @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  record Record @relation(fields: [recordId], references: [id], onDelete: Cascade)
 }
 
 model RecordHistory {
-  id          String   @id @default(uuid())
-  recordId    String
-  changedBy   String
-  oldData     Json
-  newData     Json
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid())
+  recordId  String
+  changedBy String
+  oldData   Json
+  newData   Json
+  createdAt DateTime @default(now())
 
-  record      Record   @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  record Record @relation(fields: [recordId], references: [id], onDelete: Cascade)
 }
 
 model Attachment {
-  id            String   @id @default(uuid())
-  originalName  String
-  savedName     String   @unique
-  mimeType      String
-  size          Int
-  recordId      String?
-  fieldCode     String?
-  createdAt     DateTime @default(now())
+  id           String   @id @default(uuid())
+  originalName String
+  savedName    String   @unique
+  mimeType     String
+  size         Int
+  recordId     String?
+  fieldCode    String?
+  createdAt    DateTime @default(now())
 
-  record        Record?  @relation(fields: [recordId], references: [id], onDelete: SetNull)
+  record Record? @relation(fields: [recordId], references: [id], onDelete: SetNull)
 }
 
 model AuditLog {
@@ -196,32 +201,32 @@ model AuditLog {
 }
 
 model Setting {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  value       Json
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
 }
 
 model UserTemplate {
-  id          String   @id @default(uuid())
-  name        String
-  category    String   @default("マイテンプレート")
-  icon        String   @default("LayoutGrid")
-  summary     String?
-  definition  Json     // { fields:[], processConfig, recordViewScope, recordEditScope }
-  createdBy   String
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  name       String
+  category   String   @default("マイテンプレート")
+  icon       String   @default("LayoutGrid")
+  summary    String?
+  definition Json // { fields:[], processConfig, recordViewScope, recordEditScope }
+  createdBy  String
+  createdAt  DateTime @default(now())
 }
 
 model Notification {
   id        String   @id @default(uuid())
-  userId    String   // 受信者
-  type      String   // assignment, mention, reminder, status_change
+  userId    String // 受信者
+  type      String // assignment, mention, reminder, status_change
   title     String
   body      String?
   appId     String?
   recordId  String?
-  actorId   String?  // 通知の発生元ユーザー（システム発はnull）
+  actorId   String? // 通知の発生元ユーザー（システム発はnull）
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
 
@@ -232,11 +237,11 @@ model Notification {
 model Dashboard {
   id        String   @id @default(uuid())
   name      String
-  ownerId   String   // 作成者
+  ownerId   String // 作成者
   isShared  Boolean  @default(false) // 粗いフラグ: access.mode!=='private' のとき true（一覧の事前フィルタ用）
   // アクセス権の詳細: { mode:'private'|'shared'|'public', shares:[{ targetType:'User'|'Group', targetId, canEdit }] }
   access    Json?
-  layout    Json     // { widgets: Widget[] }
+  layout    Json // { widgets: Widget[] }
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -248,21 +253,21 @@ model Dashboard {
 // ローカルLLM（RAG/セマンティック検索）用のベクトル埋め込み。
 // pgvectorは使わず number[] を JSON 保存し、Node 側でコサイン類似度を計算する（オフライン/最小依存方針）。
 model Embedding {
-  id        String   @id @default(uuid())
-  source    String   // 'record' | 'document'
-  appId     String?  // source=record のとき所属アプリ（可視性フィルタ用）
-  recordId  String?  // source=record のとき元レコード
-  docId     String?  // source=document のとき元ナレッジ文書
-  chunkIdx  Int      @default(0)
-  content   String   // 埋め込み対象テキスト（チャンク）
-  vector    Json     // number[]（埋め込みベクトル）
-  model     String   // 使用した埋め込みモデル名
-  dim       Int      // 次元数（モデル変更検知用）
+  id           String   @id @default(uuid())
+  source       String // 'record' | 'document'
+  appId        String? // source=record のとき所属アプリ（可視性フィルタ用）
+  recordId     String? // source=record のとき元レコード
+  docId        String? // source=document のとき元ナレッジ文書
+  chunkIdx     Int      @default(0)
+  content      String // 埋め込み対象テキスト（チャンク）
+  vector       Json // number[]（埋め込みベクトル）
+  model        String // 使用した埋め込みモデル名
+  dim          Int // 次元数（モデル変更検知用）
   // 行政文書の構造メタ（docKind=gov のチャンクのみ。条引用・閲覧ジャンプ用。）
   structPath   String? // 構造パス（"第2章 総則 / 第3条第2項"）
   structLabel  String? // 引用ラベル（"第3条" / "記 1" 等）
   structAnchor String? // 該当構造ノードのid（ビューアでのジャンプ用）
-  createdAt DateTime @default(now())
+  createdAt    DateTime @default(now())
 
   @@index([source])
   @@index([appId])
@@ -272,19 +277,19 @@ model Embedding {
 
 // RAG用のアップロード文書（マニュアル/FAQ等のテキスト）。
 model KnowledgeDoc {
-  id        String   @id @default(uuid())
-  title     String
-  content   String   // 原文テキスト（アップロード時はファイルから抽出した本文）
-  appId     String?  // 任意: 可視性を特定アプリの閲覧権限に紐付け（null=全認証ユーザー）
+  id             String   @id @default(uuid())
+  title          String
+  content        String // 原文テキスト（アップロード時はファイルから抽出した本文）
+  appId          String? // 任意: 可視性を特定アプリの閲覧権限に紐付け（null=全認証ユーザー）
   sourceFileName String? // アップロード元のファイル名（手動入力はnull）
   sourceMime     String? // アップロード元のMIMEタイプ
   // 行政文書モード: gov のとき構造解析ツリー/メタを保持し、条単位でチャンク化する。
-  docKind   String?  // 'plain' | 'gov'（null=plain扱い）
-  structure Json?    // 構造ツリー（GovStructure）
-  meta      Json?    // 抽出メタ（発番号/日付/施行日/件名等, GovMeta）
-  createdBy String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  docKind        String? // 'plain' | 'gov'（null=plain扱い）
+  structure      Json? // 構造ツリー（GovStructure）
+  meta           Json? // 抽出メタ（発番号/日付/施行日/件名等, GovMeta）
+  createdBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([appId])
 }

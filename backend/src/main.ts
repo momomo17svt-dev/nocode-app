@@ -24,6 +24,10 @@ async function bootstrap() {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self'",
+    );
     next();
   });
   app.use(json({ limit: '15mb' }));

@@ -18,8 +18,7 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
-      const data = await api.post('/auth/login', { loginId, password });
-      localStorage.setItem('token', data.access_token);
+      const data = await api.post<{ user: Record<string, unknown> }>('/auth/login', { loginId, password });
       localStorage.setItem('user', JSON.stringify(data.user));
       navigate('/');
     } catch (err: any) {
@@ -48,6 +47,7 @@ export function Login() {
           <Field label="ログインID">
             <input
               type="text"
+              aria-label="ログインID"
               className="input"
               value={loginId}
               onChange={(e) => setLoginId(e.target.value)}
@@ -58,6 +58,7 @@ export function Login() {
           <Field label="パスワード">
             <input
               type="password"
+              aria-label="パスワード"
               className="input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

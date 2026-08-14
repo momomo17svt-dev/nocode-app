@@ -24,13 +24,28 @@ export function getUser(): AuthUser | null {
   }
 }
 
-export function getToken(): string | null {
-  return localStorage.getItem('token');
-}
-
 export function logout() {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
+}
+
+/** 旧版localStorage JWTを一度だけCookieセッションへ交換し、端末から削除する。 */
+export async function migrateLegacySession(apiBase: string): Promise<void> {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    const response = await fetch(`${apiBase}/auth/session`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) localStorage.removeItem('user');
+  } catch {
+    // 一時的な通信失敗でも危険な旧トークンは保持しない。次回は再ログインする。
+    localStorage.removeItem('user');
+  } finally {
+    localStorage.removeItem('token');
+  }
 }
 
 export const ROLE_LABELS: Record<string, string> = {

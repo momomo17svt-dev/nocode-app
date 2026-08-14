@@ -55,7 +55,7 @@ export function Board() {
   };
 
   // 選択ボードが変わったら再算出
-  useEffect(() => { setData({}); load(current);   }, [curId, dashboards]);
+  useEffect(() => { setData({}); load(current); }, [current]);
 
   // 定期更新
   useEffect(() => {

@@ -1,39 +1,33 @@
-# アーキテクチャ設計 (Architecture Design)
+# アーキテクチャ設計
 
-## 1. システム概要
-本システムは、完全オフライン環境（Windows 10）で動作するノーコード業務アプリ基盤である。
-インターネット接続なしで完結し、LAN内のクライアントPCからブラウザを通じてアクセスする。
+## 概要
 
-## 2. システム構成
+ノーコードAppは、WindowsのLAN内・オフライン環境を主対象とする業務アプリ基盤です。同じプロジェクトフォルダからDocker構成とDockerなしのbat構成を選べます。
 
-### 2.1 物理構成
-- **サーバー**: Windows 10 マシン
-- **クライアント**: LANに接続されたPCのWebブラウザ
+## 構成
 
-### 2.2 ソフトウェアスタック
-- **Frontend**: React 18, TypeScript, Vite, React Router, TanStack Query
-- **Backend**: Node.js, NestJS, TypeScript, REST API
-- **Database**: PostgreSQL
-- **ORM**: Prisma
+- Frontend: React 19 / TypeScript / Vite / React Router / Tailwind CSS
+- Backend: Node.js 22 / NestJS 11 / REST API
+- Database: PostgreSQL 16 / Prisma 7
+- Storage: `storage/attachments`と`storage/tiles`
+- Optional AI: LM Studio等のOpenAI互換API
 
-## 3. ディレクトリ構成方針
-```text
-/
-├── frontend/        # Vite + React (SPA)
-│   ├── public/      # ローカルフォント、アイコン、画像
-│   └── src/
-├── backend/         # NestJS (API Server)
-│   ├── src/
-│   └── prisma/      # スキーマ、マイグレーション
-├── storage/         # 添付ファイル保存先 (バックエンドからのみアクセス可)
-│   └── attachments/
-└── docs/            # 仕様書、設計書
-```
+Docker版はNginxがSPA、`/api`、`/tiles`を同一オリジンで公開します。bat版はViteの5173番とNestJSの3001番を起動し、許可したローカルオリジンだけをCORSで受け入れます。
 
-## 4. 通信方式
-- クライアントからのリクエストはすべてバックエンド（NestJS）のREST APIを経由する。
-- 静的ファイル（フロントエンドのビルド成果物）はバックエンドサーバ（または別途ローカルのHTTPサーバ）から配信する。
+## 認証と防御
 
-## 5. オフライン要件の対応
-- Google Fonts、CDN経由のライブラリ（Bootstrap等）は一切使用せず、すべて `frontend/public` または `node_modules` に同梱してビルドする。
-- 外部APIやSaaS連携機能は排除する。
+ログイン成功時にJWTをHttpOnly・SameSite Cookieへ、CSRFトークンを読取可能Cookieへ保存します。フロントエンドは更新通信にCSRFヘッダーを付けます。Bearer認証も外部API連携とテストのために受け付けますが、ログイン本文へのBearer返却は既定で無効です。
+
+NginxとAPIはCSP、クリックジャッキング防止、MIMEスニッフィング防止等のヘッダーを返します。アップロードはメモリで受け、認可とファイル内容検証を通過してからUUID名で保存します。
+
+## データ取得
+
+一覧タブはPostgreSQLで権限範囲、検索、条件、並び替え、ページ分割を処理します。アプリID・作成日時・更新日時・作成者・JSONBにインデックスを持ちます。フロントエンドは短時間GETキャッシュと同時リクエスト重複排除を行います。各画面は遅延読み込みされます。
+
+## 可観測性
+
+APIはリクエストID、経路、状態コード、処理時間をJSONログへ出力します。既定では低速または失敗したリクエストを記録し、`HTTP_LOG_MODE=all`で全件記録できます。`DB_SLOW_QUERY_MS`を超えるSQLも警告ログへ出力します。
+
+## オフライン要件
+
+実行に必要な画面ライブラリはビルドへ同梱します。オンライン地図と任意のAI接続は選択機能で、ローカル地図タイルとAI無効設定で完全オフライン運用できます。

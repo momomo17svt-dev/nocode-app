@@ -101,7 +101,7 @@ export async function seedApp(
 
 /** ユーザーをグループに所属させる（無ければグループも作る）。 */
 export async function addToGroup(prisma: PrismaService, userId: string, groupId: string) {
-  return prisma.groupMember.create({ data: { userId, groupId } });
+  return prisma.user.update({ where: { id: userId }, data: { groupId } });
 }
 
 /** 実HTTPでログインしてアクセストークンを取得する。 */

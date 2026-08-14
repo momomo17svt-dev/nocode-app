@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Pencil, Paperclip, Trash2, Send, History, MessageSquare, Upload, Link2, ChevronRight, Copy, Printer, ChevronDown } from 'lucide-react';
 import { api } from '../lib/api';
@@ -42,8 +42,14 @@ export function RecordDetail() {
 
   useEffect(() => { getAvailableTileStyles().then(setTileStyles); }, []);
 
-  const loadRecord = () => api.get(`/records/${recordId}`).then(setRecord).catch((e) => toast.error(e.message));
-  const loadAttachments = () => api.get(`/attachments?recordId=${recordId}`).then(setAttachments).catch(() => {});
+  const loadRecord = useCallback(
+    () => api.get(`/records/${recordId}`).then(setRecord).catch((e) => toast.error(e.message)),
+    [recordId, toast],
+  );
+  const loadAttachments = useCallback(
+    () => api.get(`/attachments?recordId=${recordId}`).then(setAttachments).catch(() => {}),
+    [recordId],
+  );
 
   useEffect(() => {
     if (!appId || !recordId) return;
@@ -60,7 +66,7 @@ export function RecordDetail() {
     api.get(`/records/${recordId}/related`).then(setRelated).catch(() => {});
     loadRecord();
     loadAttachments();
-  }, [appId, recordId]);
+  }, [appId, recordId, loadRecord, loadAttachments]);
 
   // 参照項目の参照先が削除されていないか確認（リンク切れ検出）。
   useEffect(() => {

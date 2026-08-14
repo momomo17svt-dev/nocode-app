@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Gauge, Plus, Pencil, Trash2, GripVertical, Check, Share2, RefreshCw, LayoutGrid, Settings2, MonitorPlay,
 } from 'lucide-react';
@@ -70,17 +70,9 @@ export function Dashboard() {
       })
       .catch((e) => toast.error(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [toast]);
 
-  // ダッシュボード切替でデータ算出
-  useEffect(() => {
-    if (!selected) { setData({}); return; }
-    localStorage.setItem(LS_KEY, selected.id);
-    setEditing(false);
-    computeData(selected.widgets, true);
-  }, [selectedId]);
-
-  const computeData = async (widgets: Widget[], replace = false) => {
+  const computeData = useCallback(async (widgets: Widget[], replace = false) => {
     if (!widgets || widgets.length === 0) { if (replace) setData({}); return; }
     setDataLoading(true);
     try {
@@ -91,7 +83,15 @@ export function Dashboard() {
     } finally {
       setDataLoading(false);
     }
-  };
+  }, [toast, setData, setDataLoading]);
+
+  // ダッシュボード切替でデータ算出
+  useEffect(() => {
+    if (!selected) { setData({}); return; }
+    localStorage.setItem(LS_KEY, selected.id);
+    setEditing(false);
+    void computeData(selected.widgets, true);
+  }, [selected, computeData]);
 
   // ウィジェット配列を保存（レイアウト変更）。recompute=trueで再集計。
   const saveWidgets = async (widgets: Widget[], recompute: Widget[] | null = null) => {

@@ -27,7 +27,7 @@ export function AuditLogs() {
   useEffect(() => {
     api.get('/audit-logs').then(setLogs).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
     api.get('/directory/users').then((us: any[]) => setUsers(Object.fromEntries(us.map((u) => [u.id, u.name?.trim() || u.loginId])))).catch(() => {});
-  }, []);
+  }, [toast]);
 
   return (
     <Layout>

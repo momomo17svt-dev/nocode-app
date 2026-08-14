@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, RefreshCw, Loader2, Clock } from 'lucide-react';
 import { aiApi, type LlmHealth } from '../../lib/ai';
 import { useLlmQueue } from './QueueHint';
@@ -10,15 +10,15 @@ export function LlmStatusBadge({ onHealth }: { onHealth?: (h: LlmHealth) => void
   // 接続済みの間だけキューを軽量ポーリング（LM Studio非接触）
   const queue = useLlmQueue(!!health?.ok);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     aiApi
       .health()
       .then((h) => { setHealth(h); onHealth?.(h); })
       .catch(() => setHealth(null))
       .finally(() => setLoading(false));
-  };
-  useEffect(() => { load();   }, []);
+  }, [onHealth]);
+  useEffect(() => { load(); }, [load]);
 
   const ok = !!health?.ok;
   const q = queue || health?.queue || null;

@@ -15,7 +15,7 @@ describe('RecordsService', () => {
 
   beforeEach(() => {
     tx = {
-      field: { findMany: jest.fn().mockResolvedValue([]) },
+      field: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
       record: {
         create: jest.fn((args) => ({
           id: 'r-new',
@@ -41,9 +41,10 @@ describe('RecordsService', () => {
         delete: jest.fn(),
         deleteMany: jest.fn(),
       },
-      field: { findMany: jest.fn().mockResolvedValue([]) },
+      field: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
       app: { findUnique: jest.fn().mockResolvedValue({ name: 'App', processConfig: null }) },
       user: { findMany: jest.fn().mockResolvedValue([]) },
+      $queryRaw: jest.fn(),
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     };
 
@@ -192,6 +193,43 @@ describe('RecordsService', () => {
           where: { appId: 'app1', createdBy: { in: ['u1', 'u2'] } },
         }),
       );
+    });
+  });
+
+  describe('findPage', () => {
+    it('DBで件数とページIDを取得し、ID順を保って返す', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ count: 3n }])
+        .mockResolvedValueOnce([{ id: 'r2' }, { id: 'r1' }]);
+      prisma.field.findUnique.mockResolvedValue({ fieldType: 'number' });
+      prisma.record.findMany.mockResolvedValue([
+        { id: 'r1', dataJson: { amount: 150 } },
+        { id: 'r2', dataJson: { amount: 300 } },
+      ]);
+
+      const result = await service.findPage(
+        'app1',
+        {
+          page: 1,
+          pageSize: 2,
+          search: 'urgent',
+          conditions: [{ field: 'amount', op: 'gt', value: '100' }],
+          sort: { field: 'amount', order: 'desc' },
+        },
+        ['u1'],
+        { field: 'assignee', userIds: ['u1', 'u2'] },
+      );
+
+      expect(result).toMatchObject({ total: 3, page: 1, pageSize: 2, totalPages: 2 });
+      expect(result.items.map((record: any) => record?.id)).toEqual(['r2', 'r1']);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    });
+
+    it('空ページでは詳細取得を行わない', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([{ count: 0n }]).mockResolvedValueOnce([]);
+      const result = await service.findPage('app1', { page: 1, pageSize: 50 });
+      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 50, totalPages: 1 });
+      expect(prisma.record.findMany).not.toHaveBeenCalled();
     });
   });
 

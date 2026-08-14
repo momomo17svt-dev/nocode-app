@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { validateUpload } from '../common/file-validation.util';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -107,9 +108,9 @@ export class AiController {
     @CurrentUser() user: AuthUser,
   ) {
     if (!file) throw new BadRequestException('画像が指定されていません');
-    if (!file.mimetype?.startsWith('image/')) throw new BadRequestException('画像ファイルを指定してください');
     if (!appId) throw new BadRequestException('appId が指定されていません');
-    const dataUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    const validated = validateUpload(file.buffer, file.originalname, file.mimetype, 'image');
+    const dataUrl = `data:${validated.mimeType};base64,${file.buffer.toString('base64')}`;
     return this.ai.draftRecordFromImage(user.userId, user.role, appId, dataUrl);
   }
 
@@ -240,8 +241,9 @@ export class AiController {
     if (!file) throw new BadRequestException('ファイルが指定されていません');
     // multer は originalname を latin1 で渡すため UTF-8 に復元（日本語ファイル名対策）
     const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const validated = validateUpload(file.buffer, originalName, file.mimetype, 'document');
     return this.docs.createFromUpload(
-      { buffer: file.buffer, originalName, mimeType: file.mimetype },
+      { buffer: file.buffer, originalName: validated.originalName, mimeType: validated.mimeType },
       appId || null,
       user.userId,
       kind || null,

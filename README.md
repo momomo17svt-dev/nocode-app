@@ -6,7 +6,7 @@
 
 ## 主な技術
 
-- Backend: NestJS 11 / Prisma 7 / PostgreSQL / JWT
+- Backend: NestJS 11 / Prisma 7 / PostgreSQL / JWT（HttpOnly Cookie）
 - Frontend: React 19 / TypeScript / Vite / Tailwind CSS
 - Storage: ローカル添付ファイル・任意のオフライン地図タイル
 - AI: LM StudioなどのOpenAI互換API（任意）
@@ -49,7 +49,7 @@ start_server.bat
 - 添付ファイルは`storage/attachments/`へ保存されます。
 - DBダンプ、添付、環境設定、地図キャッシュはGit管理対象外です。
 
-別PCへフォルダごと移す前に`export-db.bat`を実行してください。Docker版とbat版を自動判定して`migration/nocode_db.sql`を作成し、移行先の新規Dockerまたは`setup.bat`から復元できます。
+別PCへフォルダごと移す前に`export-db.bat`を実行してください。Docker版とbat版を自動判定して`migration/nocode_db.sql`を作成し、移行先の新規Dockerまたは`setup.bat`から復元できます。復元の確認方法は[バックアップ・復元ガイド](docs/backup-restore-guide.md)にまとめています。
 
 本番データを移動する場合は[オフライン移行ガイド](docs/offline-migration.md)を参照してください。
 
@@ -60,13 +60,15 @@ cd backend
 npm ci
 npm run build
 npm test -- --runInBand
+npm run test:e2e
 
 cd ../frontend
 npm ci
 npm run build
+npm test
 ```
 
-Pull Requestを送る前に、両方の`lint`、`build`、バックエンドテストを実行してください。詳細は[CONTRIBUTING.md](CONTRIBUTING.md)にあります。
+Pull Requestでは、両方の`lint`・`build`・単体テスト、実PostgreSQLを使うE2E、DBバックアップ復元試験、依存関係監査が自動実行されます。詳細は[CONTRIBUTING.md](CONTRIBUTING.md)にあります。
 
 ## 地図データ
 
