@@ -3,6 +3,8 @@ import type { GovMeta, GovStructure } from './govdoc';
 
 // ===== 型 =====
 export type ModelKind = 'llm' | 'embeddings' | 'vlm' | 'unknown';
+export type LlmProvider = 'lmstudio' | 'ollama' | 'openai' | 'openrouter' | 'groq' | 'gemini' | 'mistral' | 'custom';
+export type LlmApiKeyHeader = 'authorization' | 'api-key' | 'x-api-key';
 export interface ModelInfo {
   id: string;
   type: ModelKind;
@@ -21,6 +23,7 @@ export interface QueueStatus {
 export interface LlmHealth {
   ok: boolean;
   enabled: boolean;
+  provider: LlmProvider;
   baseUrl: string;
   models: string[];
   modelList: ModelInfo[];
@@ -34,7 +37,11 @@ export interface LlmHealth {
 
 export interface LlmConfig {
   enabled: boolean;
+  provider: LlmProvider;
   baseUrl: string;
+  apiKey: string;
+  apiKeyConfigured: boolean;
+  apiKeyHeader: LlmApiKeyHeader;
   chatModel: string;
   embedModel: string;
   temperature: number;
@@ -134,7 +141,7 @@ export const aiApi = {
   queue: () => api.get('/llm/queue') as Promise<QueueStatus>,
   loadModel: (kind: 'chat' | 'embed', model?: string) => api.post('/llm/load', { kind, model }) as Promise<LlmHealth>,
   getConfig: () => api.get('/llm/config') as Promise<LlmConfig>,
-  saveConfig: (patch: Partial<LlmConfig>) => api.put('/llm/config', patch) as Promise<LlmConfig>,
+  saveConfig: (patch: Partial<LlmConfig> & { clearApiKey?: boolean }) => api.put('/llm/config', patch) as Promise<LlmConfig>,
 
   search: (query: string, k?: number, docId?: string) => api.post('/ai/search', { query, k, docId }) as Promise<{ hits: SearchHit[] }>,
   ask: (question: string, history?: ChatMsg[], docId?: string) =>

@@ -5,17 +5,17 @@ describe('AuditLogsController', () => {
   let controller: AuditLogsController;
 
   beforeEach(() => {
-    service = { findAll: jest.fn().mockResolvedValue([]) };
+    service = { findPage: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50, totalPages: 1 }) };
     controller = new AuditLogsController(service);
   });
 
-  it('limit未指定は既定500件で取得する', async () => {
+  it('ページ未指定は1ページ目を50件で取得する', async () => {
     await controller.findAll();
-    expect(service.findAll).toHaveBeenCalledWith(500);
+    expect(service.findPage).toHaveBeenCalledWith(1, 50);
   });
 
-  it('limit文字列を数値へ変換して渡す', async () => {
-    await controller.findAll('25');
-    expect(service.findAll).toHaveBeenCalledWith(25);
+  it('ページ文字列を数値へ変換して渡す', async () => {
+    await controller.findAll('3', '25');
+    expect(service.findPage).toHaveBeenCalledWith(3, 25);
   });
 });

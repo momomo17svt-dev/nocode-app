@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { ScrollText } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { ChevronLeft, ChevronRight, ScrollText } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Layout } from '../../components/Layout';
+import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { SkeletonRows } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
@@ -18,16 +19,62 @@ const ACTION_LABELS: Record<string, string> = {
   ATTACHMENT_UPLOAD: '添付追加', ATTACHMENT_DELETE: '添付削除',
 };
 
+interface AuditLogItem {
+  id: string;
+  userId: string | null;
+  actionType: string;
+  targetResource: string;
+  targetId: string | null;
+  details: Record<string, unknown> | null;
+  ipAddress: string | null;
+  createdAt: string;
+}
+
+interface AuditLogPage {
+  items: AuditLogItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+interface DirectoryUser {
+  id: string;
+  loginId: string;
+  name?: string | null;
+}
+
+const PAGE_SIZE = 50;
+
 export function AuditLogs() {
   const toast = useToast();
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [users, setUsers] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    api.get('/audit-logs').then(setLogs).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
-    api.get('/directory/users').then((us: any[]) => setUsers(Object.fromEntries(us.map((u) => [u.id, u.name?.trim() || u.loginId])))).catch(() => {});
+  const load = useCallback((targetPage: number) => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(targetPage), pageSize: String(PAGE_SIZE) });
+    return api.get<AuditLogPage>(`/audit-logs?${params.toString()}`)
+      .then((result) => {
+        setLogs(result.items);
+        setPage(result.page);
+        setTotal(result.total);
+        setTotalPages(result.totalPages);
+      })
+      .catch((e: Error) => toast.error(e.message))
+      .finally(() => setLoading(false));
   }, [toast]);
+
+  useEffect(() => {
+    void load(1);
+    void api.get<DirectoryUser[]>('/directory/users')
+      .then((rows) => setUsers(Object.fromEntries(rows.map((user) => [user.id, user.name?.trim() || user.loginId]))))
+      .catch(() => {});
+  }, [load]);
 
   return (
     <Layout>
@@ -37,6 +84,7 @@ export function AuditLogs() {
       ) : logs.length === 0 ? (
         <EmptyState icon={<ScrollText className="size-6" />} title="ログがありません" />
       ) : (
+        <>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -63,6 +111,18 @@ export function AuditLogs() {
             </tbody>
           </table>
         </div>
+        <div className="flex items-center justify-between gap-3 mt-3">
+          <span className="text-sm text-muted tabular-nums">全 {total} 件・{totalPages} ページ中 {page} ページ目</span>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" className="btn-icon" disabled={page <= 1 || loading} onClick={() => void load(page - 1)} aria-label="前へ">
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button variant="ghost" size="sm" className="btn-icon" disabled={page >= totalPages || loading} onClick={() => void load(page + 1)} aria-label="次へ">
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+        </>
       )}
     </Layout>
   );

@@ -1,6 +1,6 @@
 # ノーコードApp
 
-ノーコードAppは、LAN内・オフライン環境でも利用できる業務アプリ基盤です。フォーム、一覧、権限、ワークフロー、ダッシュボード、監査ログ、ローカルLLM連携などを備えています。
+ノーコードAppは、LAN内・オフライン環境でも利用できる業務アプリ基盤です。フォーム、一覧、権限、ワークフロー、ダッシュボード、監査ログ、任意のLLM連携などを備えています。
 
 > 現在は公開準備中の`v0.1.0`です。インターネットへ直接公開する前に、[SECURITY.md](SECURITY.md)と[既知の課題](docs/known-issues.md)を確認してください。
 
@@ -9,7 +9,7 @@
 - Backend: NestJS 11 / Prisma 7 / PostgreSQL / JWT（HttpOnly Cookie）
 - Frontend: React 19 / TypeScript / Vite / Tailwind CSS
 - Storage: ローカル添付ファイル・任意のオフライン地図タイル
-- AI: LM StudioなどのOpenAI互換API（任意）
+- AI: LM Studio、Ollama、OpenAI、OpenRouter、Groq、Gemini、Mistral、任意のOpenAI互換API（任意）
 
 ## Dockerで起動
 
@@ -41,6 +41,10 @@ start_server.bat
 `setup.bat`は環境設定と初期管理者を安全に生成し、DBマイグレーションとビルドを行います。Docker版とbat版は同じ5173番ポートを使うため、同時には起動しないでください。
 
 詳しくは[セットアップガイド](docs/setup-guide.md)と[Dockerガイド](docs/docker-guide.md)を参照してください。
+
+## AI接続（任意）
+
+管理画面からプロバイダー、ベースURL、チャットモデル、埋め込みモデルを設定できます。クラウド接続ではAPIキーも登録できますが、保存済みのキーは画面や設定APIへ再表示されません。AI検索を使う場合は、接続先が埋め込みAPIにも対応していることを確認してください。
 
 ## データとバックアップ
 

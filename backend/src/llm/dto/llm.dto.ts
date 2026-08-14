@@ -5,8 +5,20 @@ export class UpdateLlmConfigDto {
   @IsOptional() @IsBoolean()
   enabled?: boolean;
 
+  @IsOptional() @IsIn(['lmstudio', 'ollama', 'openai', 'openrouter', 'groq', 'gemini', 'mistral', 'custom'])
+  provider?: 'lmstudio' | 'ollama' | 'openai' | 'openrouter' | 'groq' | 'gemini' | 'mistral' | 'custom';
+
   @IsOptional() @IsString()
   baseUrl?: string;
+
+  @IsOptional() @IsString()
+  apiKey?: string;
+
+  @IsOptional() @IsIn(['authorization', 'api-key', 'x-api-key'])
+  apiKeyHeader?: 'authorization' | 'api-key' | 'x-api-key';
+
+  @IsOptional() @IsBoolean()
+  clearApiKey?: boolean;
 
   @IsOptional() @IsString()
   chatModel?: string;

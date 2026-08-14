@@ -198,6 +198,8 @@ model AuditLog {
   details        Json?
   ipAddress      String?
   createdAt      DateTime @default(now())
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
 }
 
 model Setting {

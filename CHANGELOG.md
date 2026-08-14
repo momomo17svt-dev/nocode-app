@@ -13,6 +13,9 @@
 - 画面単位の遅延読み込み、APIタイムアウト、短時間キャッシュ、同時GET重複排除を追加
 - リクエストID、低速API、低速SQLの構造化ログを追加
 - フロントエンドテスト、実DB E2E、CIのバックアップ復元試験を追加
+- 監査ログを新しい順の50件単位ページ表示へ変更し、取得用インデックスを追加
+- LLM接続にOllama、OpenAI、OpenRouter、Groq、Gemini、Mistral、カスタムOpenAI互換APIを追加
+- LLMのAPIキーを設定画面へ再表示せず、明示操作でのみ削除する方式へ変更
 
 ### Security
 

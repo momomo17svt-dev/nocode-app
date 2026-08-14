@@ -14,7 +14,7 @@ export class AuditLogsController {
   constructor(private readonly auditLogsService: AuditLogsService) {}
 
   @Get()
-  findAll(@Query('limit') limit?: string) {
-    return this.auditLogsService.findAll(limit ? Number(limit) : 500);
+  findAll(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+    return this.auditLogsService.findPage(Number(page || 1), Number(pageSize || 50));
   }
 }

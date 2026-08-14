@@ -80,7 +80,10 @@ if ($Mode -eq 'Docker') {
         DB_SLOW_QUERY_MS = '500'
         HTTP_LOG_MODE = 'slow'
         VITE_API_TIMEOUT_MS = '20000'
+        LLM_PROVIDER = 'lmstudio'
         LLM_BASE_URL = 'http://host.docker.internal:1234/v1'
+        LLM_API_KEY = ''
+        LLM_API_KEY_HEADER = 'authorization'
     })
 }
 else {
@@ -101,7 +104,10 @@ else {
         SLOW_REQUEST_MS = '1000'
         DB_SLOW_QUERY_MS = '500'
         HTTP_LOG_MODE = 'slow'
+        LLM_PROVIDER = 'lmstudio'
         LLM_BASE_URL = 'http://localhost:1234/v1'
+        LLM_API_KEY = ''
+        LLM_API_KEY_HEADER = 'authorization'
     })
 }
 

@@ -36,3 +36,19 @@
 ```
 
 追加クエリは`search`、`conditions`（JSON、最大20条件）、`sortField`、`sortOrder=asc|desc`です。`pageSize`の上限は100です。権限による作成者/組織/対象社員範囲は常にサーバー側で適用されます。
+
+## 監査ログ
+
+`GET /api/audit-logs?page=1&pageSize=50`
+
+システム管理者だけが利用できます。新しいログから順に、レコード一覧と同じページ情報を返します。`pageSize`の上限は100です。
+
+```json
+{ "items": [], "total": 0, "page": 1, "pageSize": 50, "totalPages": 1 }
+```
+
+## LLM設定
+
+`GET /api/llm/config`は接続設定を返しますが、保存済みAPIキー本体は返しません。`apiKey`は常に空文字、`apiKeyConfigured`は登録有無です。
+
+`PUT /api/llm/config`では、同じプロバイダーのまま空の`apiKey`を送ると既存キーを維持します。キーを消す場合は`clearApiKey: true`を送ります。プロバイダー変更時は、旧キーの誤送信を避けるため、新しいキーを同時指定しない限り既存キーを破棄します。対応する`provider`は`lmstudio`、`ollama`、`openai`、`openrouter`、`groq`、`gemini`、`mistral`、`custom`です。`custom`ではBearer、`api-key`、`x-api-key`の認証ヘッダーを選べます。

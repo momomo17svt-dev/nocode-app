@@ -10,7 +10,7 @@
 - Backend: Node.js 22 / NestJS 11 / REST API
 - Database: PostgreSQL 16 / Prisma 7
 - Storage: `storage/attachments`と`storage/tiles`
-- Optional AI: LM Studio等のOpenAI互換API
+- Optional AI: LM Studio、Ollama、主要クラウド、任意のOpenAI互換API
 
 Docker版はNginxがSPA、`/api`、`/tiles`を同一オリジンで公開します。bat版はViteの5173番とNestJSの3001番を起動し、許可したローカルオリジンだけをCORSで受け入れます。
 
@@ -22,7 +22,11 @@ NginxとAPIはCSP、クリックジャッキング防止、MIMEスニッフィ�
 
 ## データ取得
 
-一覧タブはPostgreSQLで権限範囲、検索、条件、並び替え、ページ分割を処理します。アプリID・作成日時・更新日時・作成者・JSONBにインデックスを持ちます。フロントエンドは短時間GETキャッシュと同時リクエスト重複排除を行います。各画面は遅延読み込みされます。
+一覧タブはPostgreSQLで権限範囲、検索、条件、並び替え、ページ分割を処理します。監査ログも作成日時とIDの複合インデックスを使い、50件単位で取得します。アプリID・作成日時・更新日時・作成者・JSONBにインデックスを持ちます。フロントエンドは短時間GETキャッシュと同時リクエスト重複排除を行います。各画面は遅延読み込みされます。
+
+## AI接続
+
+LLMクライアントはOpenAI互換のモデル一覧、チャット、ストリーミング、埋め込みAPIを共通利用します。LM StudioとOllamaはローカル接続、OpenAI・OpenRouter・Groq・Gemini・Mistralはプリセット、その他はカスタムURLで接続します。APIキーはサーバー側の設定DBに保存し、フロントエンドへは登録済みかどうかだけを返します。LM Studio固有のモデル読込・解放機能は、LM Studio選択時だけ有効です。
 
 ## 可観測性
 

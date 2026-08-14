@@ -16,11 +16,18 @@ export class AuditLogsService {
 
   constructor(private prisma: PrismaService) {}
 
-  async findAll(limit = 500) {
-    return this.prisma.auditLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: limit,
+  async findPage(page = 1, pageSize = 50) {
+    const size = Math.min(100, Math.max(1, Number.isFinite(pageSize) ? Math.floor(pageSize) : 50));
+    const requestedPage = Math.max(1, Number.isFinite(page) ? Math.floor(page) : 1);
+    const total = await this.prisma.auditLog.count();
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    const currentPage = Math.min(requestedPage, totalPages);
+    const items = await this.prisma.auditLog.findMany({
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (currentPage - 1) * size,
+      take: size,
     });
+    return { items, total, page: currentPage, pageSize: size, totalPages };
   }
 
   /**

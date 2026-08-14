@@ -6,19 +6,19 @@
 
 `cd backend && npm test -- --runInBand`
 
-認証、CSRF、権限、レコード計算/採番/ページ取得、アップロード内容検証、監査、監視などをDB・外部AIをモックして検証します。
+認証、CSRF、権限、レコード計算/採番/ページ取得、アップロード内容検証、監査ログのページ計算、監視などをDB・外部AIをモックして検証します。LLM接続はプロバイダー推定、認証ヘッダー、APIキー非表示・維持・削除、LM Studio専用操作の制限も確認します。
 
 ### Backend E2E
 
 `cd backend && npm run test:e2e`
 
-専用DB `nocode_test_db`を自動作成してマイグレーションし、実HTTPとPostgreSQLを通して認証、Cookie/CSRF、権限、レコードCRUD、検索、ページ分割を検証します。開発DB `nocode_db`は変更しません。
+専用DB `nocode_test_db`を自動作成してマイグレーションし、実HTTPとPostgreSQLを通して認証、Cookie/CSRF、権限、レコードCRUD、検索、レコードと監査ログのページ分割を検証します。開発DB `nocode_db`は変更しません。
 
 ### Frontend
 
 `cd frontend && npm test`
 
-VitestとTesting Libraryで計算処理、APIキャッシュ/重複排除、Cookie/CSRF、認証失効、ログイン画面を検証します。
+VitestとTesting Libraryで計算処理、APIキャッシュ/重複排除、Cookie/CSRF、認証失効、ログイン画面、監査ログのページ移動を検証します。
 
 ### 静的検査とビルド
 
@@ -33,5 +33,5 @@ Pull Requestごとに上記すべてと本番依存関係監査を実行しま�
 - Docker版とbat版の起動、ログイン、アプリ一覧、レコード一覧/詳細/編集
 - 50件超の一覧ページ移動、検索、保存済みビュー、並び替え
 - 添付アップロード/ダウンロード、拒否対象ファイル
-- オフライン地図、印刷/PDFレイアウト、LM Studio接続（利用する場合）
+- オフライン地図、印刷/PDFレイアウト、利用するローカルまたはクラウドLLMへの実接続
 - フォルダ移行前のバックアップと、別環境での復元
