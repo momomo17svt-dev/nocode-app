@@ -11,6 +11,9 @@ const { Pool } = require('pg');
 const { execSync } = require('child_process');
 
 const TEST_DB = process.env.TEST_DB_NAME || 'nocode_test_db';
+if (!/^[A-Za-z0-9_]+$/.test(TEST_DB)) {
+  throw new Error('TEST_DB_NAME must contain only letters, numbers, and underscores');
+}
 
 function toTestUrl(url) {
   // postgresql://user:pass@host:port/nocode_db?... -> .../nocode_test_db?...
@@ -29,7 +32,9 @@ async function main() {
   try {
     const r = await admin.query('select 1 from pg_database where datname = $1', [TEST_DB]);
     if (r.rowCount === 0) {
-      await admin.query(`CREATE DATABASE "${TEST_DB}"`);
+      await admin.query(
+        `CREATE DATABASE "${TEST_DB}" WITH ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C'`,
+      );
       console.log(`[e2e] created database ${TEST_DB}`);
     } else {
       console.log(`[e2e] database ${TEST_DB} already exists`);
