@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { RecordsService } from './records.service';
 
 /**
@@ -11,6 +11,7 @@ describe('RecordsService', () => {
   let notifications: any;
   let embeddings: any;
   let permission: any;
+  let attachments: any;
   let service: RecordsService;
 
   beforeEach(() => {
@@ -29,8 +30,12 @@ describe('RecordsService', () => {
           dataJson: args.data.dataJson,
           updatedBy: args.data.updatedBy,
         })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'r1', appId: 'app1', dataJson: { name: 'new' }, version: 2 }),
+        delete: jest.fn().mockResolvedValue({ id: 'r1' }),
       },
       recordHistory: { create: jest.fn().mockResolvedValue({}) },
+      deletedRecord: { create: jest.fn().mockResolvedValue({}) },
       $queryRawUnsafe: jest.fn().mockResolvedValue([{ n: 1 }]),
     };
 
@@ -41,6 +46,7 @@ describe('RecordsService', () => {
         delete: jest.fn(),
         deleteMany: jest.fn(),
       },
+      deletedRecord: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), delete: jest.fn() },
       field: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
       app: { findUnique: jest.fn().mockResolvedValue({ name: 'App', processConfig: null }) },
       user: { findMany: jest.fn().mockResolvedValue([]) },
@@ -55,8 +61,9 @@ describe('RecordsService', () => {
       removeRecords: jest.fn().mockResolvedValue(undefined),
     };
     permission = { allowedCreatorIds: jest.fn().mockResolvedValue(null) };
+    attachments = { remove: jest.fn().mockResolvedValue({ success: true }) };
 
-    service = new RecordsService(prisma, notifications, embeddings, permission);
+    service = new RecordsService(prisma, notifications, embeddings, permission, attachments);
   });
 
   describe('create', () => {
@@ -106,30 +113,36 @@ describe('RecordsService', () => {
         id: 'r1',
         appId: 'app1',
         dataJson: { no: 'A-001', name: 'old' },
+        version: 1,
       });
     });
 
     it('既存データとマージし、変更履歴を記録する', async () => {
-      await service.update('r1', { name: 'new' }, 'u1');
+      await service.update('r1', { name: 'new' }, 'u1', 1);
 
       const hist = tx.recordHistory.create.mock.calls[0][0];
       expect(hist.data.oldData).toEqual({ no: 'A-001', name: 'old' });
       expect(hist.data.newData).toMatchObject({ name: 'new' });
-      expect(tx.record.update).toHaveBeenCalled();
+      expect(tx.record.updateMany).toHaveBeenCalled();
     });
 
     it('自動採番はクライアントの上書きを無視し既存値を保持する', async () => {
       tx.field.findMany.mockResolvedValue([{ fieldType: 'auto_number', fieldCode: 'no' }]);
 
-      await service.update('r1', { no: 'HACKED', name: 'new' }, 'u1');
+      await service.update('r1', { no: 'HACKED', name: 'new' }, 'u1', 1);
 
-      const arg = tx.record.update.mock.calls[0][0];
+      const arg = tx.record.updateMany.mock.calls[0][0];
       expect(arg.data.dataJson.no).toBe('A-001');
     });
 
     it('存在しないレコードは NotFound', async () => {
       prisma.record.findUnique.mockResolvedValue(null);
-      await expect(service.update('missing', {}, 'u1')).rejects.toThrow(NotFoundException);
+      await expect(service.update('missing', {}, 'u1', 1)).rejects.toThrow(NotFoundException);
+    });
+
+    it('古いバージョンでの更新は競合として拒否する', async () => {
+      await expect(service.update('r1', { name: 'new' }, 'u1', 2)).rejects.toThrow(ConflictException);
+      expect(tx.record.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -139,6 +152,7 @@ describe('RecordsService', () => {
         id: 'r1',
         appId: 'app1',
         dataJson: { status: 'pending', mgr: 'u-mgr' },
+        version: 1,
       });
       prisma.app.findUnique.mockResolvedValue({
         name: 'App',
@@ -152,17 +166,17 @@ describe('RecordsService', () => {
 
     it('指定承認者以外がステータス遷移すると Forbidden', async () => {
       await expect(
-        service.update('r1', { status: 'approved' }, 'intruder', { canManage: false }),
+        service.update('r1', { status: 'approved' }, 'intruder', 1, { canManage: false }),
       ).rejects.toThrow(ForbiddenException);
     });
 
     it('指定承認者本人は遷移できる', async () => {
-      await expect(service.update('r1', { status: 'approved' }, 'u-mgr', {})).resolves.toBeDefined();
+      await expect(service.update('r1', { status: 'approved' }, 'u-mgr', 1, {})).resolves.toBeDefined();
     });
 
     it('管理権限者は承認者でなくても遷移できる', async () => {
       await expect(
-        service.update('r1', { status: 'approved' }, 'intruder', { canManage: true }),
+        service.update('r1', { status: 'approved' }, 'intruder', 1, { canManage: true }),
       ).resolves.toBeDefined();
     });
   });
@@ -235,12 +249,15 @@ describe('RecordsService', () => {
 
   describe('bulkRemove', () => {
     it('作成者制限付きで削除し件数を返す', async () => {
-      prisma.record.deleteMany.mockResolvedValue({ count: 2 });
-      const res = await service.bulkRemove('app1', ['a', 'b'], ['u1']);
+      prisma.record.findMany.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
+      const remove = jest.spyOn(service, 'remove').mockResolvedValue({ id: 'x', trashed: true, expiresAt: new Date() });
+      const res = await service.bulkRemove('app1', ['a', 'b'], ['u1'], null, 'u1');
       expect(res).toEqual({ deleted: 2 });
-      expect(prisma.record.deleteMany).toHaveBeenCalledWith({
+      expect(prisma.record.findMany).toHaveBeenCalledWith({
         where: { id: { in: ['a', 'b'] }, appId: 'app1', createdBy: { in: ['u1'] } },
+        select: { id: true },
       });
+      expect(remove).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -279,9 +296,13 @@ describe('RecordsService', () => {
 
   describe('remove', () => {
     it('レコードを削除し埋め込みも除去する', async () => {
-      prisma.record.delete.mockResolvedValue({ id: 'r1' });
-      await service.remove('r1');
-      expect(prisma.record.delete).toHaveBeenCalledWith({ where: { id: 'r1' } });
+      prisma.record.findUnique.mockResolvedValue({
+        id: 'r1', appId: 'app1', createdBy: 'u1', updatedBy: 'u1', dataJson: { name: 'x' }, version: 1,
+        createdAt: new Date(), updatedAt: new Date(), comments: [], histories: [], attachments: [], app: { name: 'App' },
+      });
+      await service.remove('r1', 'u1');
+      expect(tx.deletedRecord.create).toHaveBeenCalled();
+      expect(tx.record.delete).toHaveBeenCalledWith({ where: { id: 'r1' } });
       expect(embeddings.removeRecord).toHaveBeenCalledWith('r1');
     });
   });

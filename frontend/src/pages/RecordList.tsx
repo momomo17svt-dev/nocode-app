@@ -16,6 +16,7 @@ import { type FieldDef, formatValue, groupKey } from '../lib/fields';
 import { buildOptionColors, softColor, NEUTRAL_COLOR } from '../lib/colors';
 import { parseCsv, readCsvFile } from '../lib/csv';
 import { getUser } from '../lib/auth';
+import { getLocale } from '../lib/i18n';
 import { pushRecent } from '../lib/prefs';
 import { Chart, type ChartDatum } from '../components/Chart';
 import { Button } from '../components/ui/Button';
@@ -188,9 +189,12 @@ export function RecordList() {
 
   // ステータス/セレクトはその場で変更（楽観的更新→失敗時は再読込）
   const inlineEdit = async (recordId: string, code: string, value: any) => {
+    const current = records.find((r) => r.id === recordId);
+    if (!current) return;
     setRecords((rs) => rs.map((r) => (r.id === recordId ? { ...r, dataJson: { ...r.dataJson, [code]: value } } : r)));
     try {
-      await api.put(`/records/${recordId}`, { data: { [code]: value } });
+      const updated = await api.put(`/records/${recordId}`, { data: { [code]: value }, expectedVersion: current.version || 1 });
+      setRecords((rows) => rows.map((record) => record.id === recordId ? { ...record, version: updated.version, updatedAt: updated.updatedAt } : record));
     } catch (e: any) {
       toast.error(e.message || '更新に失敗しました');
       loadRecords();
@@ -516,7 +520,7 @@ export function RecordList() {
                         )}
                         {columns.map((f) => <td key={f.fieldCode} className="px-4 py-1.5 align-top">{renderCell(f, r)}</td>)}
                         <td className="px-4 py-1.5 text-muted whitespace-nowrap">{r.creator?.loginId}</td>
-                        <td className="px-4 py-1.5 text-muted whitespace-nowrap">{new Date(r.updatedAt).toLocaleString('ja-JP')}</td>
+                        <td className="px-4 py-1.5 text-muted whitespace-nowrap">{new Date(r.updatedAt).toLocaleString(getLocale())}</td>
                         <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5 justify-end">
                             {canEditRecord(r) && <Button variant="ghost" size="sm" icon={<Pencil className="size-4" />} onClick={() => navigate(`/apps/${appId}/records/${r.id}/edit`)} aria-label="編集" />}
@@ -914,10 +918,10 @@ function AggregatePanel({ fields, records, userMap }: { fields: FieldDef[]; reco
           </div>
           {data.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-4">
-              <MiniStat label="分類" value={data.length.toLocaleString('ja-JP')} />
-              <MiniStat label="合計" value={data.reduce((s, d) => s + d.value, 0).toLocaleString('ja-JP')} />
-              <MiniStat label="平均" value={(Math.round((data.reduce((s, d) => s + d.value, 0) / data.length) * 10) / 10).toLocaleString('ja-JP')} />
-              <MiniStat label="最大" value={Math.max(...data.map((d) => d.value)).toLocaleString('ja-JP')} />
+              <MiniStat label="分類" value={data.length.toLocaleString(getLocale())} />
+              <MiniStat label="合計" value={data.reduce((s, d) => s + d.value, 0).toLocaleString(getLocale())} />
+              <MiniStat label="平均" value={(Math.round((data.reduce((s, d) => s + d.value, 0) / data.length) * 10) / 10).toLocaleString(getLocale())} />
+              <MiniStat label="最大" value={Math.max(...data.map((d) => d.value)).toLocaleString(getLocale())} />
             </div>
           )}
           <Chart type={chartType} data={data} valueLabel={aggregate === 'count' ? '件数' : '合計'} />
@@ -1062,7 +1066,7 @@ function KanbanView({ fields, records, appId, onOpen, userMap, canEdit, onChange
               </div>
               {metricField && (
                 <div className="px-2 mb-1.5 text-xs text-muted tabular-nums">
-                  {metricField.label}: <span className="font-semibold text-content">{colSum(items).toLocaleString('ja-JP')}{metricField.settings?.unit ? ` ${metricField.settings.unit}` : ''}</span>
+                  {metricField.label}: <span className="font-semibold text-content">{colSum(items).toLocaleString(getLocale())}{metricField.settings?.unit ? ` ${metricField.settings.unit}` : ''}</span>
                 </div>
               )}
               <div className="space-y-2 min-h-[60px] px-0.5 pb-1">
@@ -1388,9 +1392,9 @@ function ProgressPanel({ app, fields, records, userMap, canRemind, appId }: {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard icon={ListChecks} label="総レコード数" value={total.toLocaleString('ja-JP')} color={C.primary} />
-          <StatCard icon={CheckCircle2} label="完了" value={done.toLocaleString('ja-JP')} color={C.success} />
-          <StatCard icon={CircleDashed} label="未完了" value={(total - done).toLocaleString('ja-JP')} color={C.warning} />
+          <StatCard icon={ListChecks} label="総レコード数" value={total.toLocaleString(getLocale())} color={C.primary} />
+          <StatCard icon={CheckCircle2} label="完了" value={done.toLocaleString(getLocale())} color={C.success} />
+          <StatCard icon={CircleDashed} label="未完了" value={(total - done).toLocaleString(getLocale())} color={C.warning} />
           <StatCard icon={Target} label="完了率" value={rate} suffix="%" color={C.primary} />
         </div>
 

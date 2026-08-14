@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, ForbiddenException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -6,6 +6,7 @@ import { EmbeddingService } from '../ai/embedding.service';
 import { PermissionService } from '../permissions/permission.service';
 import { evalFormula, evalRules, formatAutoNumber } from './compute.util';
 import { Prisma } from '@prisma/client';
+import { AttachmentsService } from '../attachments/attachments.service';
 
 interface ListOptions {
   search?: string;
@@ -29,13 +30,29 @@ export interface RecordPageOptions {
 type TxClient = Prisma.TransactionClient;
 
 @Injectable()
-export class RecordsService {
+export class RecordsService implements OnModuleInit, OnModuleDestroy {
+  private trashTimer: NodeJS.Timeout | null = null;
+  private trashInitialTimer: NodeJS.Timeout | null = null;
+
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private embeddings: EmbeddingService,
     private permission: PermissionService,
+    private attachments: AttachmentsService,
   ) {}
+
+  onModuleInit() {
+    this.trashInitialTimer = setTimeout(() => void this.purgeExpiredTrash(), 60_000);
+    this.trashInitialTimer.unref();
+    this.trashTimer = setInterval(() => void this.purgeExpiredTrash(), 6 * 60 * 60_000);
+    this.trashTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.trashInitialTimer) clearTimeout(this.trashInitialTimer);
+    if (this.trashTimer) clearInterval(this.trashTimer);
+  }
 
   /** AI埋め込みインデックスを非同期更新（失敗してもレコード操作は継続）。 */
   private reindexRecordAsync(appId: string, recordId: string) {
@@ -293,9 +310,12 @@ export class RecordsService {
   }
 
   /** 更新時に変更履歴を記録する。 */
-  async update(id: string, dataJson: any, userId: string, actor?: { canManage?: boolean }) {
+  async update(id: string, dataJson: any, userId: string, expectedVersion: number, actor?: { canManage?: boolean }) {
     const existing = await this.prisma.record.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('レコードが見つかりません');
+    if (existing.version !== expectedVersion) {
+      throw new ConflictException('別のユーザーが先に更新しました。最新内容を読み込み直してから編集してください');
+    }
 
     // 承認者ルーティング: 定義された遷移に承認者が設定されている場合、その本人(または管理権限)のみ実行可
     await this.assertProcessApprover(existing, dataJson, userId, !!actor?.canManage);
@@ -304,6 +324,13 @@ export class RecordsService {
       // 自動採番は既存値を保持しつつ、計算フィールドは再計算
       const merged = { ...(existing.dataJson as any), ...dataJson };
       const data = await this.computeFields(tx, existing.appId, merged, false, existing.dataJson as any);
+      const changed = await tx.record.updateMany({
+        where: { id, version: expectedVersion },
+        data: { dataJson: data, updatedBy: userId, version: { increment: 1 } },
+      });
+      if (changed.count !== 1) {
+        throw new ConflictException('別のユーザーが先に更新しました。最新内容を読み込み直してから編集してください');
+      }
       await tx.recordHistory.create({
         data: {
           recordId: id,
@@ -312,10 +339,7 @@ export class RecordsService {
           newData: data,
         },
       });
-      return tx.record.update({
-        where: { id },
-        data: { dataJson: data, updatedBy: userId },
-      });
+      return tx.record.findUniqueOrThrow({ where: { id } });
     });
     await this.notifyAssignments(existing.appId, updated.dataJson, existing.dataJson, userId, id);
     await this.notifyApprovers(existing.appId, updated.dataJson, existing.dataJson, userId, id);
@@ -577,10 +601,43 @@ export class RecordsService {
     return this.create(existing.appId, data, userId);
   }
 
-  async remove(id: string) {
-    const deleted = await this.prisma.record.delete({ where: { id } });
+  async remove(id: string, deletedBy: string) {
+    const existing = await this.prisma.record.findUnique({
+      where: { id },
+      include: { comments: true, histories: true, attachments: true, app: { select: { name: true } } },
+    });
+    if (!existing) throw new NotFoundException('レコードが見つかりません');
+    const snapshot = {
+      record: {
+        id: existing.id,
+        appId: existing.appId,
+        createdBy: existing.createdBy,
+        updatedBy: existing.updatedBy,
+        dataJson: existing.dataJson,
+        version: existing.version,
+        createdAt: existing.createdAt.toISOString(),
+        updatedAt: existing.updatedAt.toISOString(),
+      },
+      comments: existing.comments.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() })),
+      histories: existing.histories.map((h) => ({ ...h, createdAt: h.createdAt.toISOString() })),
+      attachmentIds: existing.attachments.map((a) => a.id),
+    };
+    const expiresAt = new Date(Date.now() + 30 * 86_400_000);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.deletedRecord.create({
+        data: {
+          originalId: existing.id,
+          appId: existing.appId,
+          appName: existing.app.name,
+          snapshot: snapshot as any,
+          deletedBy,
+          expiresAt,
+        },
+      });
+      await tx.record.delete({ where: { id } });
+    });
     this.embeddings.removeRecord(id).catch((e) => console.error('[ai-index]', e?.message || e));
-    return deleted;
+    return { id, trashed: true, expiresAt };
   }
 
   /**
@@ -592,6 +649,7 @@ export class RecordsService {
     ids: string[],
     allowedCreatorIds?: string[] | null,
     fieldScope?: { field: string; userIds: string[] } | null,
+    deletedBy?: string,
   ) {
     let targetIds = ids;
     // 対象社員フィールド基準: 範囲内のレコードIDだけに絞ってから削除する。
@@ -606,15 +664,101 @@ export class RecordsService {
         .map((r) => r.id);
     }
     if (targetIds.length === 0) return { deleted: 0 };
-    const res = await this.prisma.record.deleteMany({
+    const rows = await this.prisma.record.findMany({
       where: {
         id: { in: targetIds },
         appId,
         ...(allowedCreatorIds ? { createdBy: { in: allowedCreatorIds } } : {}),
       },
+      select: { id: true },
     });
-    this.embeddings.removeRecords(targetIds).catch((e) => console.error('[ai-index]', e?.message || e));
-    return { deleted: res.count };
+    let deleted = 0;
+    for (const row of rows) {
+      await this.remove(row.id, deletedBy || 'system');
+      deleted++;
+    }
+    return { deleted };
+  }
+
+  async listTrash(page = 1, pageSize = 50) {
+    await this.purgeExpiredTrash();
+    const size = Math.min(100, Math.max(1, Math.floor(pageSize)));
+    const requestedPage = Math.max(1, Math.floor(page));
+    const total = await this.prisma.deletedRecord.count();
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    const currentPage = Math.min(requestedPage, totalPages);
+    const items = await this.prisma.deletedRecord.findMany({
+      orderBy: { deletedAt: 'desc' },
+      skip: (currentPage - 1) * size,
+      take: size,
+    });
+    return { items, total, page: currentPage, pageSize: size, totalPages };
+  }
+
+  async restoreTrash(id: string, actorId: string) {
+    const trash = await this.prisma.deletedRecord.findUnique({ where: { id } });
+    if (!trash) throw new NotFoundException('ゴミ箱のレコードが見つかりません');
+    const snapshot = trash.snapshot as any;
+    const original = snapshot?.record;
+    if (!original) throw new NotFoundException('復元データが壊れています');
+    const app = await this.prisma.app.findUnique({ where: { id: original.appId } });
+    if (!app) throw new NotFoundException('復元先のアプリが存在しません');
+    if (await this.prisma.record.findUnique({ where: { id: original.id }, select: { id: true } })) {
+      throw new ConflictException('同じIDのレコードが既に存在するため復元できません');
+    }
+    const creator = await this.prisma.user.findUnique({ where: { id: original.createdBy }, select: { id: true } });
+    const updater = await this.prisma.user.findUnique({ where: { id: original.updatedBy }, select: { id: true } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.record.create({
+        data: {
+          id: original.id,
+          appId: original.appId,
+          createdBy: creator?.id || actorId,
+          updatedBy: updater?.id || actorId,
+          dataJson: original.dataJson,
+          version: Number(original.version || 1) + 1,
+          createdAt: new Date(original.createdAt),
+          updatedAt: new Date(),
+          comments: {
+            create: (snapshot.comments || []).map((c: any) => ({
+              id: c.id, userId: c.userId, comment: c.comment, createdAt: new Date(c.createdAt),
+            })),
+          },
+          histories: {
+            create: (snapshot.histories || []).map((h: any) => ({
+              id: h.id, changedBy: h.changedBy, oldData: h.oldData, newData: h.newData, createdAt: new Date(h.createdAt),
+            })),
+          },
+        },
+      });
+      const attachmentIds = (snapshot.attachmentIds || []).filter(Boolean);
+      if (attachmentIds.length) {
+        await tx.attachment.updateMany({ where: { id: { in: attachmentIds } }, data: { recordId: original.id } });
+      }
+      await tx.deletedRecord.delete({ where: { id } });
+    });
+    this.reindexRecordAsync(original.appId, original.id);
+    return { success: true, recordId: original.id, appId: original.appId };
+  }
+
+  async purgeTrash(id: string) {
+    const trash = await this.prisma.deletedRecord.findUnique({ where: { id } });
+    if (!trash) throw new NotFoundException('ゴミ箱のレコードが見つかりません');
+    const attachmentIds: string[] = ((trash.snapshot as any)?.attachmentIds || []).filter(Boolean);
+    for (const attachmentId of attachmentIds) {
+      await this.attachments.remove(attachmentId).catch(() => undefined);
+    }
+    await this.prisma.deletedRecord.delete({ where: { id } });
+    return { success: true };
+  }
+
+  async purgeExpiredTrash() {
+    const expired = await this.prisma.deletedRecord.findMany({
+      where: { expiresAt: { lte: new Date() } },
+      select: { id: true },
+    });
+    for (const row of expired) await this.purgeTrash(row.id).catch(() => undefined);
+    return { purged: expired.length };
   }
 
   async addComment(recordId: string, userId: string, comment: string) {

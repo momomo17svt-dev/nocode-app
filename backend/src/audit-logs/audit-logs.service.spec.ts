@@ -11,6 +11,7 @@ describe('AuditLogsService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({}),
       },
+      $queryRaw: jest.fn(),
     };
     service = new AuditLogsService(prisma);
   });
@@ -32,6 +33,29 @@ describe('AuditLogsService', () => {
         items: [], total: 205, page: 3, pageSize: 100, totalPages: 3,
       });
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 200, take: 100 }));
+    });
+
+    it('検索時は全項目検索の件数と該当ページを返す', async () => {
+      const item = { id: 'log1', actionType: 'LOGIN' };
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ count: 1n }])
+        .mockResolvedValueOnce([item]);
+
+      await expect(service.findPage(1, 50, '田中', ['LOGIN'])).resolves.toEqual({
+        items: [item], total: 1, page: 1, pageSize: 50, totalPages: 1,
+      });
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(prisma.auditLog.count).not.toHaveBeenCalled();
+      expect(prisma.auditLog.findMany).not.toHaveBeenCalled();
+    });
+
+    it('不正な操作種別は検索条件から除外する', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([{ count: 0n }])
+        .mockResolvedValueOnce([]);
+
+      await service.findPage(1, 50, '', ['LOGIN', 'invalid value']);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     });
   });
 

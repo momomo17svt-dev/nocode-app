@@ -27,6 +27,7 @@ export function RecordEditor() {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState(false);
+  const [recordVersion, setRecordVersion] = useState<number | null>(null);
 
   useEffect(() => {
     if (!appId) return;
@@ -39,6 +40,7 @@ export function RecordEditor() {
         if (isEdit) {
           const rec = await api.get(`/records/${recordId}`);
           data = rec.dataJson || {};
+          setRecordVersion(rec.version || 1);
         } else {
           const initial: Record<string, any> = {};
           fieldData.forEach((f: FieldDef) => {
@@ -115,7 +117,7 @@ export function RecordEditor() {
     setSaving(true);
     try {
       if (isEdit) {
-        await api.put(`/records/${recordId}`, { data: formData });
+        await api.put(`/records/${recordId}`, { data: formData, expectedVersion: recordVersion });
         setDirty(false);
         toast.success('レコードを更新しました');
         navigate(`/apps/${appId}/records/${recordId}`);

@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { evalFormula, evalRules } from '../lib/calc';
 import type { FieldDef } from '../lib/fields';
+import { getLocale } from '../lib/i18n';
 
 export interface SubColumn { fieldCode: string; fieldType: string; label: string; settings?: any; }
 
@@ -129,7 +130,7 @@ function SubCell({ col, value, onChange }: { col: SubColumn; value: any; onChang
 }
 
 function fmtNum(n: number, col: SubColumn) {
-  let s = col.settings?.thousandSeparator ? n.toLocaleString('ja-JP') : String(n);
+  let s = col.settings?.thousandSeparator ? n.toLocaleString(getLocale()) : String(n);
   if (col.settings?.unit) s = `${s} ${col.settings.unit}`;
   return s;
 }

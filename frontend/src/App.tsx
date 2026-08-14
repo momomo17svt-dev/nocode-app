@@ -24,6 +24,7 @@ const PublicForm = lazy(async () => ({ default: (await import('./pages/PublicFor
 const UsersAdmin = lazy(async () => ({ default: (await import('./pages/admin/UsersAdmin')).UsersAdmin }));
 const GroupsAdmin = lazy(async () => ({ default: (await import('./pages/admin/GroupsAdmin')).GroupsAdmin }));
 const AuditLogs = lazy(async () => ({ default: (await import('./pages/admin/AuditLogs')).AuditLogs }));
+const SystemSettings = lazy(async () => ({ default: (await import('./pages/admin/SystemSettings')).SystemSettings }));
 const ChangePassword = lazy(async () => ({ default: (await import('./pages/ChangePassword')).ChangePassword }));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -90,6 +91,7 @@ function App() {
         <Route path="/admin/users" element={<DirectoryAdminRoute><UsersAdmin /></DirectoryAdminRoute>} />
         <Route path="/admin/groups" element={<DirectoryAdminRoute><GroupsAdmin /></DirectoryAdminRoute>} />
         <Route path="/admin/audit" element={<AdminRoute><AuditLogs /></AdminRoute>} />
+        <Route path="/admin/system" element={<AdminRoute><SystemSettings /></AdminRoute>} />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

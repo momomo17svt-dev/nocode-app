@@ -12,11 +12,12 @@ import type { FieldDef } from '../../lib/fields';
 interface AiAction { id: string; name: string; prompt: string; output: 'show' | 'field'; targetField?: string }
 
 /** レコード詳細のアプリ定義AIアクションボタン群（結果表示 / 指定項目へ書込）。 */
-export function RecordAiActions({ appId, recordId, actions, data, canEdit, fields, onWritten }: {
+export function RecordAiActions({ appId, recordId, actions, data, version, canEdit, fields, onWritten }: {
   appId: string;
   recordId: string;
   actions: AiAction[];
   data: Record<string, any>;
+  version: number;
   canEdit: boolean;
   fields: FieldDef[];
   onWritten: () => void;
@@ -63,7 +64,7 @@ export function RecordAiActions({ appId, recordId, actions, data, canEdit, field
   const writeToField = async () => {
     if (!active?.targetField || !text.trim()) return;
     try {
-      await api.put(`/records/${recordId}`, { data: { [active.targetField]: text } });
+      await api.put(`/records/${recordId}`, { data: { [active.targetField]: text }, expectedVersion: version });
       toast.success(`「${labelOf(active.targetField)}」に書き込みました`);
       setOpen(false);
       onWritten();

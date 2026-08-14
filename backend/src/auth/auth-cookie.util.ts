@@ -29,22 +29,35 @@ function secureCookies(): boolean {
   return process.env.AUTH_COOKIE_SECURE === 'true';
 }
 
-function cookieMaxAge(): number {
+function configuredCookieMaxAge(): number {
   const configured = Number(process.env.AUTH_COOKIE_MAX_AGE_MS || 28_800_000);
   return Number.isFinite(configured) && configured > 0 ? configured : 28_800_000;
 }
 
+/** 管理画面で設定したJWT有効期限とブラウザーCookieの期限を一致させる。 */
+function tokenMaxAge(token: string): number {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) as { exp?: number };
+    if (typeof payload.exp !== 'number') return configuredCookieMaxAge();
+    const remaining = payload.exp * 1_000 - Date.now();
+    return Math.max(1_000, remaining);
+  } catch {
+    return configuredCookieMaxAge();
+  }
+}
+
 export function setAuthCookies(res: Response, token: string): void {
   const common = { path: '/', sameSite: 'lax' as const, secure: secureCookies() };
+  const maxAge = tokenMaxAge(token);
   res.cookie(SESSION_COOKIE, token, {
     ...common,
     httpOnly: true,
-    maxAge: cookieMaxAge(),
+    maxAge,
   });
   res.cookie(CSRF_COOKIE, randomBytes(32).toString('base64url'), {
     ...common,
     httpOnly: false,
-    maxAge: cookieMaxAge(),
+    maxAge,
   });
 }
 

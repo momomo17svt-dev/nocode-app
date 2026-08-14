@@ -17,7 +17,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('login')
   async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.login(dto.loginId, dto.password);
+    const result = await this.authService.login(dto.loginId, dto.password, req.ip || 'unknown');
     setAuthCookies(res, result.access_token);
     await this.audit.log({
       userId: result.user.id,
@@ -65,6 +65,12 @@ export class AuthController {
   @Get('profile')
   getProfile(@CurrentUser() user: AuthUser) {
     return user;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('password-policy')
+  getPasswordPolicy() {
+    return this.authService.passwordPolicy();
   }
 
   @UseGuards(JwtAuthGuard)

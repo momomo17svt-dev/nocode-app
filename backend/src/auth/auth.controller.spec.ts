@@ -28,7 +28,7 @@ describe('AuthController', () => {
       authService.login.mockResolvedValue({ access_token: 't', user: { id: 'u1' } });
       process.env.AUTH_EXPOSE_BEARER_TOKEN = 'true';
       const result = await controller.login({ loginId: 'a', password: 'p' } as any, req as any, res);
-      expect(authService.login).toHaveBeenCalledWith('a', 'p');
+      expect(authService.login).toHaveBeenCalledWith('a', 'p', '10.0.0.1');
       expect(result.access_token).toBe('t');
       expect(res.cookie).toHaveBeenCalledTimes(2);
       expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'LOGIN', userId: 'u1', ipAddress: '10.0.0.1' }));

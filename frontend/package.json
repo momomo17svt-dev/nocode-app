@@ -10,6 +10,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "i18n:audit": "node scripts/audit-i18n.mjs --strict",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview"

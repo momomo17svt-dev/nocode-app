@@ -25,6 +25,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      TZ: ${TZ:-Asia/Tokyo}
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nocode_db}?schema=public
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required. Run start_docker.bat first.}

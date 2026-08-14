@@ -8,6 +8,7 @@ import { api } from '../lib/api';
 import { getUser, canCreateApp } from '../lib/auth';
 import { useToast } from '../components/ui/Toast';
 import { useConfirm } from '../components/ui/ConfirmDialog';
+import { getLocale } from '../lib/i18n';
 import { Modal } from '../components/ui/Modal';
 import { Field } from '../components/ui/Field';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -77,14 +78,14 @@ export function Dashboard() {
 
   const appNames = useMemo(() => new Map(apps.map((app) => [app.id, app.name])), [apps]);
   const matchingDashboards = useMemo(() => {
-    const query = dashboardQuery.trim().toLocaleLowerCase('ja');
+    const query = dashboardQuery.trim().toLocaleLowerCase(getLocale());
     if (!query) return dashboards;
     return dashboards.filter((dashboard) => {
       const targets = dashboard.widgets
         .map((widget) => widget.appId && appNames.get(widget.appId))
         .filter(Boolean)
         .join(' ');
-      return `${dashboard.name} ${targets}`.toLocaleLowerCase('ja').includes(query);
+      return `${dashboard.name} ${targets}`.toLocaleLowerCase(getLocale()).includes(query);
     });
   }, [appNames, dashboardQuery, dashboards]);
 
@@ -325,7 +326,7 @@ export function Dashboard() {
                       </span>
                       <span className="block mt-0.5 text-xs text-muted truncate">
                         対象: {dashboardTarget(dashboard)}
-                        {dashboard.createdAt ? `・作成 ${new Date(dashboard.createdAt).toLocaleString('ja-JP')}` : ''}
+                        {dashboard.createdAt ? `・作成 ${new Date(dashboard.createdAt).toLocaleString(getLocale())}` : ''}
                       </span>
                     </button>
                   ))}

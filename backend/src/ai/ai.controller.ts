@@ -24,12 +24,21 @@ export class AiController {
   // ===== 利用系（全ユーザー・権限は内部でアプリ単位に適用） =====
   @Post('search')
   search(@Body() dto: SearchDto, @CurrentUser() user: AuthUser) {
-    return this.ai.search(user.userId, user.role, dto.query, { k: dto.k, docId: dto.docId });
+    return this.ai.search(user.userId, user.role, dto.query, {
+      k: dto.k,
+      docId: dto.docId,
+      appId: dto.appId,
+      sourceMode: dto.sourceMode,
+    });
   }
 
   @Post('ask')
   ask(@Body() dto: AskDto, @CurrentUser() user: AuthUser) {
-    return this.ai.ask(user.userId, user.role, dto.question, dto.history as any, dto.docId);
+    return this.ai.ask(user.userId, user.role, dto.question, dto.history as any, {
+      docId: dto.docId,
+      appId: dto.appId,
+      sourceMode: dto.sourceMode,
+    });
   }
 
   /** RAGチャットのストリーミング応答（SSE）。Bearer認証のため EventSource ではなく fetch で消費する。 */
@@ -46,7 +55,11 @@ export class AiController {
         onSources: (sources) => send('sources', sources),
         onToken: (t) => send('token', t),
         onQueued: (info) => send('queued', info),
-      }, dto.docId);
+      }, {
+        docId: dto.docId,
+        appId: dto.appId,
+        sourceMode: dto.sourceMode,
+      });
       send('done', {});
     } catch (e: any) {
       send('error', e?.message || 'AI応答の生成に失敗しました');
@@ -235,6 +248,9 @@ export class AiController {
   uploadDoc(
     @UploadedFile() file: Express.Multer.File,
     @Query('appId') appId: string,
+    @Query('visibilityMode') visibilityMode: string,
+    @Query('groupIds') groupIds: string,
+    @Query('includeDescendants') includeDescendants: string,
     @Query('kind') kind: string,
     @CurrentUser() user: AuthUser,
   ) {
@@ -244,7 +260,12 @@ export class AiController {
     const validated = validateUpload(file.buffer, originalName, file.mimetype, 'document');
     return this.docs.createFromUpload(
       { buffer: file.buffer, originalName: validated.originalName, mimeType: validated.mimeType },
-      appId || null,
+      {
+        appId: appId || null,
+        visibilityMode: (visibilityMode || (appId ? 'legacy' : 'all')) as any,
+        groupIds: (groupIds || '').split(',').map((id) => id.trim()).filter(Boolean),
+        includeDescendants: includeDescendants !== 'false',
+      },
       user.userId,
       kind || null,
     );

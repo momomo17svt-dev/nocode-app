@@ -6,6 +6,7 @@ import { FieldInput } from '../components/FieldInput';
 import { type FieldDef } from '../lib/fields';
 import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
 
 interface PublicFormDef {
   title: string;
@@ -80,6 +81,7 @@ export function PublicForm() {
 
   return (
     <div className="min-h-screen bg-canvas text-content flex justify-center px-4 py-10">
+      <LanguageSwitcher className="fixed right-4 top-4 z-10" />
       <div className="w-full max-w-2xl">
         {loading && <div className="card p-8"><div className="skeleton h-8 w-1/2 mb-4" /><div className="skeleton h-24 w-full" /></div>}
 

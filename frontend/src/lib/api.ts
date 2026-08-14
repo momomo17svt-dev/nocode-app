@@ -1,3 +1,5 @@
+import { translate } from './i18n';
+
 // バックエンドのベースURL。Dockerでは同一オリジンの /api、bat/devでは画面のホスト:3001 を使う。
 const configuredBase = import.meta.env.VITE_API_BASE?.trim();
 const API_BASE = configuredBase ||
@@ -47,13 +49,13 @@ async function parseResponse<T>(res: Response): Promise<T> {
   if (res.status === 401) {
     clearSession();
     if (!window.location.pathname.startsWith('/login')) window.location.href = '/login';
-    throw new ApiError('認証の有効期限が切れました。再度ログインしてください。', 401, null);
+    throw new ApiError(translate('認証の有効期限が切れました。再度ログインしてください。'), 401, null);
   }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { message?: string | string[] };
     const message = Array.isArray(body.message) ? body.message.join(' / ') : body.message;
-    throw new ApiError(message || `APIエラー (${res.status})`, res.status, body);
+    throw new ApiError(translate(message || `APIエラー (${res.status})`), res.status, body);
   }
 
   const text = await res.text();
@@ -79,7 +81,7 @@ async function request<T>(endpoint: string, init: RequestInit = {}, timeoutMs = 
     });
     return await parseResponse<T>(res);
   } catch (error) {
-    if (timedOut) throw new Error('通信がタイムアウトしました。しばらくしてから再試行してください。', { cause: error });
+    if (timedOut) throw new Error(translate('通信がタイムアウトしました。しばらくしてから再試行してください。'), { cause: error });
     throw error;
   } finally {
     window.clearTimeout(timer);
@@ -153,10 +155,10 @@ export const api = {
         clearSession();
         if (!window.location.pathname.startsWith('/login')) window.location.href = '/login';
       }
-      if (!res.ok) throw new Error(`ダウンロードに失敗しました (${res.status})`);
+      if (!res.ok) throw new Error(translate(`ダウンロードに失敗しました (${res.status})`));
       return res.blob();
     } catch (error) {
-      if (controller.signal.aborted) throw new Error('ダウンロードがタイムアウトしました', { cause: error });
+      if (controller.signal.aborted) throw new Error(translate('ダウンロードがタイムアウトしました'), { cause: error });
       throw error;
     } finally {
       window.clearTimeout(timer);

@@ -6,6 +6,7 @@ import { EmbeddingService } from './embedding.service';
 import { formatValue, recordToText, type FieldLite } from '../common/record-text.util';
 import { sanitizeDefinition } from '../common/app-definition.util';
 import { ChatMessage } from '../llm/llm.types';
+import { DocumentsService } from './documents.service';
 
 /** 順番待ちに入った時の通知（待ち位置とキュー長）。 */
 export type QueuedCb = (info: { position: number; waiting: number }) => void;
@@ -25,12 +26,30 @@ export interface SearchHit {
   structAnchor?: string | null;
 }
 
+export type SearchSourceMode = 'records' | 'knowledge' | 'both';
+export type ChatSourceMode = 'plain' | SearchSourceMode;
+
+interface SearchOptions {
+  k?: number;
+  docId?: string;
+  appId?: string;
+  sourceMode?: SearchSourceMode;
+}
+
+interface AskOptions extends Omit<SearchOptions, 'sourceMode'> {
+  sourceMode?: ChatSourceMode;
+}
+
 const RAG_SYSTEM_PROMPT = `あなたは社内データに基づいて回答する日本語アシスタントです。
 以下のルールを厳守してください。
 - 与えられた「参考コンテキスト」に書かれている情報だけを根拠に、簡潔な日本語で回答する。
 - コンテキストに該当情報が無い場合は「資料に該当する情報が見つかりませんでした」と述べ、推測で答えない。
 - 回答の最後に、根拠にした参考番号（例: [1][3]）を示す。
 - 参考に条番号（第○条第○項など）が示されている場合は、本文中でも該当する条番号を明示して引用する。`;
+
+const PLAIN_CHAT_SYSTEM_PROMPT = `あなたは日本語で応答するAIアシスタントです。
+ユーザーの依頼に、簡潔で分かりやすく回答してください。
+この会話では社内のアプリデータやナレッジを参照していません。社内情報を求められた場合は、推測せず「参照範囲をアプリデータまたはナレッジに切り替えてください」と案内してください。`;
 
 // モデルが空応答（思考のみ・トークン超過など）を返したときに表示する案内。
 const EMPTY_ANSWER =
@@ -40,8 +59,15 @@ const EMPTY_ANSWER =
 // これ未満は弱い一致＝無関係への強制回答を生むため文脈から除外する（必要なら調整可）。
 const MIN_RAG_SCORE = 0.45;
 
-// 挨拶への友好応答（無関係な資料を根拠に回答させない）。
-const SMALL_TALK_REPLY = 'こんにちは。ナレッジに登録された資料について、知りたいことを質問してください。';
+// 無関係な資料を根拠に回答させないための固定応答。
+const NO_RAG_MATCH =
+  '選択した参照範囲に関連情報が見つかりませんでした。対象のアプリ・ナレッジを選び直すか、条件を加えて質問してください。';
+
+function smallTalkReply(sourceMode: SearchSourceMode): string {
+  if (sourceMode === 'records') return 'こんにちは。アプリデータについて、知りたいことを質問してください。';
+  if (sourceMode === 'knowledge') return 'こんにちは。ナレッジに登録された資料について、知りたいことを質問してください。';
+  return 'こんにちは。アプリデータやナレッジについて、知りたいことを質問してください。';
+}
 
 // 挨拶・謝辞などの雑談トークン（句読点・絵文字・空白を除いた全文がこれだけなら短絡）。
 const SMALL_TALK_TOKENS = new Set([
@@ -97,10 +123,11 @@ export class AiService {
     private permission: PermissionService,
     private llm: LlmService,
     private emb: EmbeddingService,
+    private docs: DocumentsService,
   ) {}
 
   // ===== セマンティック検索 =====
-  async search(userId: string, role: string, query: string, opts: { k?: number; docId?: string } = {}): Promise<{ hits: SearchHit[] }> {
+  async search(userId: string, role: string, query: string, opts: SearchOptions = {}): Promise<{ hits: SearchHit[] }> {
     const q = (query || '').trim();
     if (!q) return { hits: [] };
     const k = Math.min(Math.max(opts.k ?? 8, 1), 20);
@@ -108,8 +135,12 @@ export class AiService {
     const [qvec] = await this.llm.embed([q]);
     if (!qvec || qvec.length === 0) return { hits: [] };
 
-    const visible = await this.permission.visibleAppIds(userId, role); // null=全件
-    const rows = await this.candidateRows(visible, opts.docId);
+    const sourceMode = opts.sourceMode || 'both';
+    const [visibleApps, visibleDocs] = await Promise.all([
+      this.permission.visibleAppIds(userId, role),
+      sourceMode === 'records' && !opts.docId ? Promise.resolve([] as string[]) : this.docs.visibleIds(userId, role),
+    ]);
+    const rows = await this.candidateRows(visibleApps, visibleDocs, opts);
     if (rows.length === 0) return { hits: [] };
 
     const scored = rows
@@ -118,7 +149,7 @@ export class AiService {
       .slice(0, 60);
 
     // owner/org公開範囲アプリの最終フィルタ（アクセス可能な作成者のレコードのみ）
-    const restricted = await this.restrictedAppCreators(userId, role, visible);
+    const restricted = await this.restrictedAppCreators(userId, role, visibleApps);
     const recordOk = await this.recordOkSet(scored, restricted);
     // 対象社員フィールド基準アプリの最終フィルタ（対象社員が管轄外のレコードを除外）
     const fieldBlocked = await this.fieldScopeBlockedRecordIds(scored, userId, role);
@@ -154,11 +185,17 @@ export class AiService {
   }
 
   // ===== RAG Q&A =====
-  async ask(userId: string, role: string, question: string, history?: ChatMessage[], docId?: string) {
-    if (isSmallTalk(question)) return { answer: SMALL_TALK_REPLY, sources: [] as SearchHit[] };
-    const { hits } = await this.search(userId, role, question, { k: 6, docId });
+  async ask(userId: string, role: string, question: string, history?: ChatMessage[], opts: AskOptions = {}) {
+    const sourceMode = this.resolveChatSourceMode(opts);
+    if (sourceMode === 'plain') {
+      const answer = await this.llm.chat(this.buildPlainMessages(question, history));
+      return { answer: answer || EMPTY_ANSWER, sources: [] as SearchHit[] };
+    }
+    if (isSmallTalk(question)) return { answer: smallTalkReply(sourceMode), sources: [] as SearchHit[] };
+    const { hits } = await this.search(userId, role, question, { ...opts, k: 6, sourceMode });
     // 弱い一致（関連度 < MIN_RAG_SCORE）は無関係への強制回答を生むため文脈・出典から除外。
     const strong = hits.filter((h) => h.score >= MIN_RAG_SCORE);
+    if (strong.length === 0) return { answer: NO_RAG_MATCH, sources: [] as SearchHit[] };
     const messages = this.buildRagMessages(question, strong, history);
     const answer = await this.llm.chat(messages);
     return { answer: answer || EMPTY_ANSWER, sources: strong };
@@ -171,16 +208,32 @@ export class AiService {
     question: string,
     history: ChatMessage[] | undefined,
     cb: { onSources: (s: SearchHit[]) => void; onToken: (t: string) => void; onQueued?: QueuedCb },
-    docId?: string,
+    opts: AskOptions = {},
   ): Promise<void> {
-    if (isSmallTalk(question)) {
+    const sourceMode = this.resolveChatSourceMode(opts);
+    if (sourceMode === 'plain') {
       cb.onSources([]);
-      cb.onToken(SMALL_TALK_REPLY);
+      let emitted = 0;
+      await this.llm.chatStream(
+        this.buildPlainMessages(question, history),
+        (t) => { emitted += t.length; cb.onToken(t); },
+        { onQueued: cb.onQueued },
+      );
+      if (emitted === 0) cb.onToken(EMPTY_ANSWER);
       return;
     }
-    const { hits } = await this.search(userId, role, question, { k: 6, docId });
+    if (isSmallTalk(question)) {
+      cb.onSources([]);
+      cb.onToken(smallTalkReply(sourceMode));
+      return;
+    }
+    const { hits } = await this.search(userId, role, question, { ...opts, k: 6, sourceMode });
     const strong = hits.filter((h) => h.score >= MIN_RAG_SCORE);
     cb.onSources(strong);
+    if (strong.length === 0) {
+      cb.onToken(NO_RAG_MATCH);
+      return;
+    }
     const messages = this.buildRagMessages(question, strong, history);
     let emitted = 0;
     await this.llm.chatStream(messages, (t) => { emitted += t.length; cb.onToken(t); }, { onQueued: cb.onQueued });
@@ -201,6 +254,20 @@ export class AiService {
       ...recent,
       { role: 'user', content: `# 質問\n${question}\n\n# 参考コンテキスト\n${context}` },
     ];
+  }
+
+  private buildPlainMessages(question: string, history?: ChatMessage[]): ChatMessage[] {
+    const recent = (history || []).filter((m) => m.role !== 'system').slice(-10);
+    return [
+      { role: 'system', content: PLAIN_CHAT_SYSTEM_PROMPT },
+      ...recent,
+      { role: 'user', content: question },
+    ];
+  }
+
+  private resolveChatSourceMode(opts: AskOptions): ChatSourceMode {
+    if (opts.docId) return 'knowledge';
+    return opts.sourceMode || 'both';
   }
 
   // ===== AI分析（アプリ単位） =====
@@ -451,25 +518,30 @@ export class AiService {
   }
 
   // ===== 候補ベクトルの取得（権限フィルタ込み） =====
-  // docId 指定時はその文書1件だけに絞る（可視性も担保＝見えない文書はヒット0）。
-  private async candidateRows(visible: string[] | null, docId?: string) {
+  // 参照種別・アプリ・文書で候補を絞る（可視性も担保＝見えない対象はヒット0）。
+  private async candidateRows(visibleApps: string[] | null, visibleDocs: string[] | null, opts: SearchOptions) {
     const select = {
       id: true, source: true, appId: true, recordId: true, docId: true, content: true, vector: true,
       structPath: true, structLabel: true, structAnchor: true,
     };
-    if (docId) {
-      const where: any =
-        visible === null
-          ? { source: 'document', docId }
-          : { source: 'document', docId, OR: [{ appId: null }, { appId: { in: visible.length ? visible : ['__none__'] } }] };
+    if (opts.docId) {
+      const allowed = visibleDocs === null || visibleDocs.includes(opts.docId);
+      const where: any = { source: 'document', docId: allowed ? opts.docId : '__none__' };
       return this.prisma.embedding.findMany({ where, select });
     }
-    const recordWhere =
-      visible === null ? { source: 'record' } : { source: 'record', appId: { in: visible.length ? visible : ['__none__'] } };
-    const docWhere =
-      visible === null
-        ? { source: 'document' }
-        : { source: 'document', OR: [{ appId: null }, { appId: { in: visible.length ? visible : ['__none__'] } }] };
+    const appAllowed = !opts.appId || visibleApps === null || visibleApps.includes(opts.appId);
+    const requestedAppId = appAllowed ? opts.appId : '__none__';
+    const recordWhere = requestedAppId
+      ? { source: 'record', appId: requestedAppId }
+      : visibleApps === null
+        ? { source: 'record' }
+        : { source: 'record', appId: { in: visibleApps.length ? visibleApps : ['__none__'] } };
+    const docWhere = visibleDocs === null
+      ? { source: 'document' }
+      : { source: 'document', docId: { in: visibleDocs.length ? visibleDocs : ['__none__'] } };
+    const sourceMode = opts.sourceMode || 'both';
+    if (sourceMode === 'records') return this.prisma.embedding.findMany({ where: recordWhere as any, select });
+    if (sourceMode === 'knowledge') return this.prisma.embedding.findMany({ where: docWhere as any, select });
     return this.prisma.embedding.findMany({ where: { OR: [recordWhere as any, docWhere as any] }, select });
   }
 

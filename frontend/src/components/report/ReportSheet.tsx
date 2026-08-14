@@ -1,5 +1,6 @@
 import { type FieldDef, formatValue } from '../../lib/fields';
 import { type ReportTemplate, type ReportBlock, sheetSizeMm, renderTokens } from '../../lib/report';
+import { getLocale } from '../../lib/i18n';
 
 export type Resolver = (f: FieldDef, v: any) => string;
 
@@ -52,7 +53,7 @@ function ReportHeader({ template, fields, data, resolve }: {
     <header>
       {template.showDate && (
         <div className="text-right text-xs text-neutral-600">
-          発行日: {new Date().toLocaleDateString('ja-JP')}
+          発行日: {new Date().toLocaleDateString(getLocale())}
         </div>
       )}
       <h1 className="text-center text-2xl font-bold tracking-[0.3em] mt-1">{template.title}</h1>
@@ -135,7 +136,7 @@ function SubtablePrint({ field, rows }: { field: FieldDef; rows: any }) {
   const numericCols = columns.filter((c) => c.fieldType === 'number' || c.fieldType === 'calc');
   const fmt = (c: any, v: any) => {
     if ((c.fieldType === 'number' || c.fieldType === 'calc') && v !== '' && v !== null && v !== undefined && !isNaN(Number(v))) {
-      let s = c.settings?.thousandSeparator ? Number(v).toLocaleString('ja-JP') : String(v);
+      let s = c.settings?.thousandSeparator ? Number(v).toLocaleString(getLocale()) : String(v);
       if (c.settings?.unit) s = `${s} ${c.settings.unit}`;
       return s;
     }

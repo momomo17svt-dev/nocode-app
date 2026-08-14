@@ -79,6 +79,15 @@ export interface ChatMsg {
   content: string;
 }
 
+export type SearchSourceMode = 'records' | 'knowledge' | 'both';
+export type ChatSourceMode = 'plain' | SearchSourceMode;
+
+export interface AiSourceOptions {
+  sourceMode?: SearchSourceMode;
+  appId?: string;
+  docId?: string;
+}
+
 export interface IndexStatus {
   enabled: boolean;
   embedModel: string;
@@ -95,6 +104,10 @@ export interface DocItem {
   id: string;
   title: string;
   appId: string | null;
+  appName?: string | null;
+  visibilityMode?: KnowledgeVisibilityMode;
+  includeDescendants?: boolean;
+  groups?: KnowledgeGroup[];
   length: number;
   chunks: number;
   sourceFileName?: string | null;
@@ -110,6 +123,9 @@ export interface KnowledgeItem {
   title: string;
   appId: string | null;
   appName?: string | null;
+  visibilityMode?: KnowledgeVisibilityMode;
+  includeDescendants?: boolean;
+  groups?: KnowledgeGroup[];
   docKind?: 'plain' | 'gov';
   meta?: GovMeta | null;
   sourceFileName?: string | null;
@@ -124,11 +140,34 @@ export interface DocDetail {
   title: string;
   content: string;
   appId: string | null;
+  visibilityMode?: KnowledgeVisibilityMode;
+  includeDescendants?: boolean;
+  groups?: KnowledgeGroup[];
   sourceFileName?: string | null;
   docKind?: 'plain' | 'gov';
   structure?: GovStructure | null;
   meta?: GovMeta | null;
   updatedAt: string;
+}
+
+export type KnowledgeVisibilityMode = 'all' | 'groups' | 'legacy';
+export interface KnowledgeGroup { id: string; name: string }
+export interface KnowledgeDocInput {
+  title: string;
+  content: string;
+  visibilityMode?: KnowledgeVisibilityMode;
+  groupIds?: string[];
+  includeDescendants?: boolean;
+  /** 従来のアプリ権限文書を編集せず維持する場合だけ送信する。 */
+  appId?: string | null;
+  docKind?: 'plain' | 'gov';
+}
+
+export interface KnowledgeUploadOptions {
+  visibilityMode?: Exclude<KnowledgeVisibilityMode, 'legacy'>;
+  groupIds?: string[];
+  includeDescendants?: boolean;
+  kind?: 'plain' | 'gov';
 }
 
 /** ナレッジ文書アップロードで受け付ける拡張子（input[accept]用・バックエンドと一致）。 */
@@ -143,9 +182,10 @@ export const aiApi = {
   getConfig: () => api.get('/llm/config') as Promise<LlmConfig>,
   saveConfig: (patch: Partial<LlmConfig> & { clearApiKey?: boolean }) => api.put('/llm/config', patch) as Promise<LlmConfig>,
 
-  search: (query: string, k?: number, docId?: string) => api.post('/ai/search', { query, k, docId }) as Promise<{ hits: SearchHit[] }>,
-  ask: (question: string, history?: ChatMsg[], docId?: string) =>
-    api.post('/ai/ask', { question, history, docId }) as Promise<{ answer: string; sources: SearchHit[] }>,
+  search: (query: string, k?: number, options: AiSourceOptions = {}) =>
+    api.post('/ai/search', { query, k, ...options }) as Promise<{ hits: SearchHit[] }>,
+  ask: (question: string, history?: ChatMsg[], options: AiSourceOptions & { sourceMode?: ChatSourceMode } = {}) =>
+    api.post('/ai/ask', { question, history, ...options }) as Promise<{ answer: string; sources: SearchHit[] }>,
   analyzeApp: (appId: string) => api.post('/ai/analyze/app', { appId }) as Promise<any>,
   analyzeRecord: (recordId: string, mode: 'summary' | 'next') =>
     api.post('/ai/analyze/record', { recordId, mode }) as Promise<{ recordId: string; appId: string; mode: string; result: string }>,
@@ -170,18 +210,20 @@ export const aiApi = {
   // 管理者向け（全文書）
   listDocs: () => api.get('/ai/documents') as Promise<DocItem[]>,
   getDoc: (id: string) => api.get(`/ai/documents/${id}`) as Promise<DocDetail>,
-  createDoc: (d: { title: string; content: string; appId?: string | null; docKind?: 'plain' | 'gov' }) => api.post('/ai/documents', d),
+  createDoc: (d: KnowledgeDocInput) => api.post('/ai/documents', d),
   /** ファイルをアップロードして本文抽出＋文書作成。kind='gov'で行政文書として構造解析。 */
-  uploadDoc: (file: File, appId?: string | null, kind?: 'plain' | 'gov') => {
+  uploadDoc: (file: File, options: KnowledgeUploadOptions = {}) => {
     const fd = new FormData();
     fd.append('file', file);
     const params = new URLSearchParams();
-    if (appId) params.set('appId', appId);
-    if (kind) params.set('kind', kind);
+    params.set('visibilityMode', options.visibilityMode || 'all');
+    if (options.groupIds?.length) params.set('groupIds', options.groupIds.join(','));
+    params.set('includeDescendants', String(options.includeDescendants !== false));
+    if (options.kind) params.set('kind', options.kind);
     const q = params.toString() ? `?${params.toString()}` : '';
     return api.upload(`/ai/documents/upload${q}`, fd) as Promise<{ id: string; title: string; truncated: boolean; chars: number; docKind?: string }>;
   },
-  updateDoc: (id: string, d: { title: string; content: string; appId?: string | null; docKind?: 'plain' | 'gov' }) => api.put(`/ai/documents/${id}`, d),
+  updateDoc: (id: string, d: KnowledgeDocInput) => api.put(`/ai/documents/${id}`, d),
   deleteDoc: (id: string) => api.delete(`/ai/documents/${id}`),
   /** 保存前の構造プレビュー解析。 */
   parseGov: (content: string) => api.post('/ai/gov/parse', { content }) as Promise<GovStructure>,
@@ -244,7 +286,10 @@ interface StreamHandlers {
   signal?: AbortSignal;
 }
 
-export async function askStream(body: { question: string; history?: ChatMsg[]; docId?: string }, h: StreamHandlers): Promise<void> {
+export async function askStream(
+  body: { question: string; history?: ChatMsg[]; sourceMode?: ChatSourceMode; appId?: string; docId?: string },
+  h: StreamHandlers,
+): Promise<void> {
   try {
     await consumeSSE('/ai/ask/stream', body, (event, data) => {
       if (event === 'sources') h.onSources?.(data);

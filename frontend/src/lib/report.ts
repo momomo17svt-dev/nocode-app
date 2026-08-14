@@ -1,6 +1,7 @@
 // 帳票（印刷/PDF）テンプレートの型とユーティリティ。
 // 外部ライブラリ非依存・ブラウザ印刷方式（window.print()）でPDF化/印刷する。
 import { type FieldDef, formatValue } from './fields';
+import { getLocale } from './i18n';
 
 export type PaperSize = 'A4' | 'A5' | 'B5';
 export type Orientation = 'portrait' | 'landscape';
@@ -109,7 +110,7 @@ export function renderTokens(
 ): string {
   if (!text) return '';
   return text.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, code) => {
-    if (code === '_today') return new Date().toLocaleDateString('ja-JP');
+    if (code === '_today') return new Date().toLocaleDateString(getLocale());
     if (code === '_record') {
       return fields
         .filter((f) => !NON_FIELD_BLOCK_TYPES.includes(f.fieldType))

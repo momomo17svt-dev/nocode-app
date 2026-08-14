@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsObject, IsArray, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsObject, IsArray, IsOptional, MaxLength, IsInt, Min } from 'class-validator';
 
 export class CreateRecordDto {
   @IsString()
@@ -12,6 +12,10 @@ export class CreateRecordDto {
 export class UpdateRecordDto {
   @IsObject()
   data!: Record<string, any>;
+
+  @IsInt()
+  @Min(1)
+  expectedVersion!: number;
 }
 
 export class CommentDto {

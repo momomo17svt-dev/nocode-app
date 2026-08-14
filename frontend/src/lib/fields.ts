@@ -1,3 +1,5 @@
+import { getLocale } from './i18n';
+
 // 仕様書 3.6 のフォーム部品14種。
 export interface FieldDef {
   id?: string;
@@ -72,7 +74,7 @@ export function formatValue(field: FieldDef, value: any): string {
   // 数値・計算フィールドは桁区切り・単位を反映
   if ((field.fieldType === 'number' || field.fieldType === 'calc') && !isNaN(Number(value))) {
     let s = String(value);
-    if (field.settings?.thousandSeparator) s = Number(value).toLocaleString('ja-JP');
+    if (field.settings?.thousandSeparator) s = Number(value).toLocaleString(getLocale());
     if (field.settings?.unit) s = `${s} ${field.settings.unit}`;
     return s;
   }

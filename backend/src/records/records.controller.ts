@@ -20,6 +20,8 @@ import { CurrentUser, type AuthUser } from '../common/decorators/current-user.de
 import { PermissionService, type EffectivePermission } from '../permissions/permission.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CreateRecordDto, UpdateRecordDto, CommentDto, ImportDto, BulkDeleteDto, BulkDistributeDto, ReferencingCountDto, ExistDto } from './dto/record.dto';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @UseGuards(JwtAuthGuard)
 @Controller('api/records')
@@ -109,6 +111,37 @@ export class RecordsController {
     res.send(csv);
   }
 
+  /** システム管理者向け: 30日以内の削除レコード一覧。 */
+  @Get('trash')
+  @UseGuards(RolesGuard)
+  @Roles('SystemAdmin')
+  listTrash(@Query('page') pageRaw?: string, @Query('pageSize') pageSizeRaw?: string) {
+    const page = Number(pageRaw || 1);
+    const pageSize = Number(pageSizeRaw || 50);
+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+      throw new BadRequestException('ページ指定が正しくありません');
+    }
+    return this.recordsService.listTrash(page, pageSize);
+  }
+
+  @Post('trash/:id/restore')
+  @UseGuards(RolesGuard)
+  @Roles('SystemAdmin')
+  async restoreTrash(@Param('id') id: string, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    const result = await this.recordsService.restoreTrash(id, user.userId);
+    await this.audit.log({ userId: user.userId, actionType: 'RECORD_RESTORE', targetResource: 'record', targetId: result.recordId, details: { appId: result.appId }, ipAddress: req.ip });
+    return result;
+  }
+
+  @Delete('trash/:id')
+  @UseGuards(RolesGuard)
+  @Roles('SystemAdmin')
+  async purgeTrash(@Param('id') id: string, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    const result = await this.recordsService.purgeTrash(id);
+    await this.audit.log({ userId: user.userId, actionType: 'RECORD_PURGE', targetResource: 'trash', targetId: id, ipAddress: req.ip });
+    return result;
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     const meta = await this.recordsService.getRecordMeta(id);
@@ -179,7 +212,7 @@ export class RecordsController {
     }
     // 対象社員フィールド基準（設定時・非特権）の範囲内のみ削除対象にする。
     const fieldScope = await this.permission.recordFieldScope(dto.appId, user.userId, user.role, perm.canManage);
-    const result = await this.recordsService.bulkRemove(dto.appId, dto.ids, allowed, fieldScope);
+    const result = await this.recordsService.bulkRemove(dto.appId, dto.ids, allowed, fieldScope, user.userId);
     await this.audit.log({
       userId: user.userId,
       actionType: 'RECORD_BULK_DELETE',
@@ -272,7 +305,7 @@ export class RecordsController {
     const perm = await this.permission.getEffectivePermission(user.userId, user.role, meta.appId);
     await this.assertCanMutate(meta.appId, 'edit', perm, meta.createdBy, user.userId, user.role);
     await this.assertRecordFieldScope(meta.appId, perm.canManage, id, user.userId, user.role);
-    const record = await this.recordsService.update(id, dto.data, user.userId, { canManage: perm.canManage });
+    const record = await this.recordsService.update(id, dto.data, user.userId, dto.expectedVersion, { canManage: perm.canManage });
     await this.audit.log({
       userId: user.userId,
       actionType: 'RECORD_UPDATE',
@@ -290,7 +323,7 @@ export class RecordsController {
     const perm = await this.permission.getEffectivePermission(user.userId, user.role, meta.appId);
     await this.assertCanMutate(meta.appId, 'delete', perm, meta.createdBy, user.userId, user.role);
     await this.assertRecordFieldScope(meta.appId, perm.canManage, id, user.userId, user.role);
-    const result = await this.recordsService.remove(id);
+    const result = await this.recordsService.remove(id, user.userId);
     await this.audit.log({
       userId: user.userId,
       actionType: 'RECORD_DELETE',

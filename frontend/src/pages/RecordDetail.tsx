@@ -16,6 +16,7 @@ import { isGeoPoint, mapZoom, mapHeightClass, buildSwitcherBasemaps, getAvailabl
 import { buildOptionColors, NEUTRAL_COLOR } from '../lib/colors';
 import { RecordAiButton } from '../components/ai/RecordAiButton';
 import { RecordAiActions } from '../components/ai/RecordAiActions';
+import { getLocale } from '../lib/i18n';
 
 interface Perm { canView: boolean; canAdd: boolean; canEdit: boolean; canDelete: boolean; canManage: boolean; }
 
@@ -138,7 +139,7 @@ export function RecordDetail() {
 
   const runAction = async (to: string) => {
     try {
-      await api.put(`/records/${recordId}`, { data: { ...record.dataJson, [proc.statusField]: to } });
+      await api.put(`/records/${recordId}`, { data: { ...record.dataJson, [proc.statusField]: to }, expectedVersion: record.version || 1 });
       toast.success('ステータスを更新しました');
       loadRecord();
     } catch (e: any) { toast.error(e.message); }
@@ -188,6 +189,7 @@ export function RecordDetail() {
               recordId={recordId}
               actions={aiActions}
               data={record.dataJson || {}}
+              version={record.version || 1}
               canEdit={canEditThis}
               fields={fields}
               onWritten={loadRecord}
@@ -299,9 +301,9 @@ export function RecordDetail() {
               ))}
             </dl>
             <div className="px-5 py-3 border-t border-border text-xs text-muted">
-              作成: {userDisplay(record.creator)} / {new Date(record.createdAt).toLocaleString('ja-JP')}
+              作成: {userDisplay(record.creator)} / {new Date(record.createdAt).toLocaleString(getLocale())}
               <span className="mx-2">·</span>
-              更新: {userDisplay(record.updater)} / {new Date(record.updatedAt).toLocaleString('ja-JP')}
+              更新: {userDisplay(record.updater)} / {new Date(record.updatedAt).toLocaleString(getLocale())}
             </div>
           </div>
 
@@ -343,7 +345,7 @@ export function RecordDetail() {
                 <div key={c.id} className="rounded-lg bg-surface-2 px-3.5 py-2.5">
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <strong className="text-sm">{c.loginId}</strong>
-                    <span className="text-xs text-muted">{new Date(c.createdAt).toLocaleString('ja-JP')}</span>
+                    <span className="text-xs text-muted">{new Date(c.createdAt).toLocaleString(getLocale())}</span>
                   </div>
                   <div className="text-sm whitespace-pre-wrap break-words">{c.comment}</div>
                 </div>
@@ -398,7 +400,7 @@ export function RecordDetail() {
               <div key={h.id} className="text-sm border-l-2 border-border pl-3">
                 <div className="flex items-center justify-between gap-2">
                   <strong className="text-[13px]">{h.loginId}</strong>
-                  <span className="text-xs text-muted">{new Date(h.createdAt).toLocaleString('ja-JP')}</span>
+                  <span className="text-xs text-muted">{new Date(h.createdAt).toLocaleString(getLocale())}</span>
                 </div>
                 <Diff fields={fields} oldData={h.oldData} newData={h.newData} />
               </div>
@@ -457,7 +459,7 @@ function SubtableView({ field, rows }: { field: FieldDef; rows: any }) {
   const numericCols = columns.filter((c) => c.fieldType === 'number' || c.fieldType === 'calc');
   const fmt = (c: any, v: any) => {
     if ((c.fieldType === 'number' || c.fieldType === 'calc') && v !== '' && v !== null && v !== undefined && !isNaN(Number(v))) {
-      let s = c.settings?.thousandSeparator ? Number(v).toLocaleString('ja-JP') : String(v);
+      let s = c.settings?.thousandSeparator ? Number(v).toLocaleString(getLocale()) : String(v);
       if (c.settings?.unit) s = `${s} ${c.settings.unit}`;
       return s;
     }

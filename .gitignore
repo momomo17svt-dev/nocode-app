@@ -16,6 +16,8 @@ coverage/
 # Runtime data and private backups
 storage/attachments/*
 !storage/attachments/.gitkeep
+storage/backups/*
+!storage/backups/.gitkeep
 storage/tiles/*
 !storage/tiles/README.md
 !storage/tiles/.gitkeep
