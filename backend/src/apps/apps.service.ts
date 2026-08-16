@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../permissions/permission.service';
 import { RecordsService } from '../records/records.service';
 import { getTemplate, listTemplates, type TemplateView, type TemplateDashboard } from './templates';
-import { getSampleData, getSuiteSampleData } from './template-samples';
+import { SAMPLE_CREATOR, getSampleData, getSuiteSampleData } from './template-samples';
 import { getSuite, listSuites } from './suites';
 import { sanitizeDefinition } from '../common/app-definition.util';
 
@@ -232,7 +232,7 @@ export class AppsService {
       for (const sample of getSampleData(templateId)) {
         try {
           // テンプレート同梱のサンプルはサーバ側で用意した値なので、外部入力向けの絞り込みは掛けない。
-          await this.records.create(app.id, sample, creatorId, { trustedSource: true });
+          await this.records.create(app.id, resolveSamplePlaceholders(sample, creatorId), creatorId, { trustedSource: true });
         } catch {
           /* サンプル投入失敗は無視 */
         }
@@ -417,7 +417,7 @@ export class AppsService {
             }
           }
           try {
-            const rec = await this.records.create(appId, sample, creatorId, { trustedSource: true });
+            const rec = await this.records.create(appId, resolveSamplePlaceholders(sample, creatorId), creatorId, { trustedSource: true });
             // 子が参照する表示フィールドの値をキーに、作成レコードを登録。
             for (const df of indexFields) {
               const v = sample[df];
@@ -567,4 +567,20 @@ export class AppsService {
       },
     });
   }
+}
+
+/**
+ * サンプルデータ中のプレースホルダを実値へ置き換える。
+ * ユーザー選択項目はユーザーIDを持つ必要があり、テンプレート定義には書けない。
+ * そのため SAMPLE_CREATOR を埋めておき、アプリを作成した本人のIDへ差し替える。
+ */
+export function resolveSamplePlaceholders(
+  sample: Record<string, any>,
+  creatorId: string,
+): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [key, value] of Object.entries(sample || {})) {
+    out[key] = value === SAMPLE_CREATOR ? creatorId : value;
+  }
+  return out;
 }
