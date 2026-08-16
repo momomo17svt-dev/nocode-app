@@ -187,15 +187,17 @@ export class DashboardsService {
   async computeWidgets(userId: string, role: string, widgets: Widget[]) {
     const visible = await this.permission.visibleAppIds(userId, role); // null=全件
     const userMap = await this.userMap();
-    const result: Record<string, any> = {};
+    // ウィジェットIDはクライアント由来なので、素のオブジェクトへ添字代入しない
+    // （`__proto__` 等が混じるとプロトタイプを触ってしまう）。
+    const result = new Map<string, any>();
     for (const w of widgets || []) {
       try {
-        result[w.id] = await this.computeOne(userId, role, w, visible, userMap);
+        result.set(w.id, await this.computeOne(userId, role, w, visible, userMap));
       } catch (e: any) {
-        result[w.id] = { type: w.type, error: e?.message || '集計に失敗しました' };
+        result.set(w.id, { type: w.type, error: e?.message || '集計に失敗しました' });
       }
     }
-    return result;
+    return Object.fromEntries(result);
   }
 
   private async userMap(): Promise<Record<string, string>> {
@@ -458,7 +460,11 @@ export class DashboardsService {
     const out = rows.map((r) => {
       const data = (r.dataJson as any) || {};
       const cells: Record<string, string> = {};
-      for (const c of cols) cells[c] = this.formatCell(fieldMap[c], data[c], userMap);
+      // 添字にはDBから読んだ fieldCode を使う（cols は allCodes で絞ってあるので必ず引ける）。
+      for (const c of cols) {
+        const f = fieldMap[c];
+        cells[f.fieldCode] = this.formatCell(f, data[c], userMap);
+      }
       return { id: r.id, cells };
     });
 

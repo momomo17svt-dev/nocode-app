@@ -23,19 +23,53 @@ function extOf(fileName: string): string {
   return extname((fileName || '').toLowerCase());
 }
 
+/**
+ * script/style ブロックを添字走査で取り除く。
+ * `<script[\s\S]*?<\/script>` の遅延一致は、閉じタグの無い `<script` が大量に並ぶ入力で
+ * 開始位置ごとに末尾まで走るため入力長の二乗時間になる。indexOf は前方へしか進まないので線形。
+ * 閉じ `>` まで飲むので `</script >` のような空白入りも取りこぼさない。
+ */
+function stripBlocks(text: string, tag: string): string {
+  const lower = text.toLowerCase();
+  const open = `<${tag}`;
+  const close = `</${tag}`;
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const start = lower.indexOf(open, at);
+    if (start < 0) break;
+    const closeAt = lower.indexOf(close, start + open.length);
+    if (closeAt < 0) break; // 閉じタグ無し。以降は通常のタグ除去に任せる
+    const end = lower.indexOf('>', closeAt);
+    if (end < 0) break;
+    out += text.slice(at, start) + ' ';
+    at = end + 1;
+  }
+  return out + text.slice(at);
+}
+
+// 実体参照は1回の走査でまとめて戻す。replace を連ねると `&amp;lt;` が
+// `&lt;` を経て `<` まで解除され、原文と違う内容が索引に載る。
+const ENTITIES: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&apos;': "'",
+  '&#39;': "'",
+};
+const ENTITY_RE = /&(?:nbsp|amp|lt|gt|quot|apos|#39);/gi;
+
 /** HTML/XMLからタグを除いて読めるテキストにする簡易処理。 */
 function htmlToText(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+  return stripBlocks(stripBlocks(html, 'script'), 'style')
     .replace(/<\/(p|div|li|tr|h[1-6]|br)>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"');
+    // [^<>] にして「次の < まで」で打ち切る。[^>] だと閉じ `>` の無い入力で
+    // `<` ごとに末尾まで舐めることになり、ここも入力長の二乗になる。
+    .replace(/<[^<>]+>/g, ' ')
+    .replace(ENTITY_RE, (e) => ENTITIES[e.toLowerCase()] ?? e);
 }
 
 // CJK文字（ひらがな・カタカナ全域(・ー含む U+30A1-30FF)・々・漢字 基本＋拡張A＋互換）。

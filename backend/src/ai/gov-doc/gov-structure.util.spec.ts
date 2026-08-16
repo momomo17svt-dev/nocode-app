@@ -122,4 +122,12 @@ describe('detectGovLikely', () => {
     const doc = ['第2四半期の売上報告', '売上は前年比110%でした。', '第3四半期の見込みは横ばいです。'].join('\n');
     expect(detectGovLikely(doc)).toBe(false);
   });
+
+  it('改行だらけの入力でも現実的な時間で終わる', () => {
+    // 行内空白に \s を使うと (^|\n) と重なり、改行の連続で走査位置が二乗に膨らむ。
+    const doc = '\n'.repeat(50000);
+    const started = process.hrtime.bigint();
+    expect(detectGovLikely(doc)).toBe(false);
+    expect(Number(process.hrtime.bigint() - started) / 1e6).toBeLessThan(2000);
+  });
 });

@@ -40,12 +40,14 @@ export class RecordsController {
     @CurrentUser() user: AuthUser,
   ) {
     const perm = await this.permission.assert(user.userId, user.role, appId, 'canView');
-    // filter[xxx] 形式のクエリを抽出
-    const filters: Record<string, string> = {};
+    // filter[xxx] 形式のクエリを抽出。項目コードはクエリ文字列そのままなので
+    // 素のオブジェクトへ添字代入せず、いったんMapに集めてから通常の連想配列に戻す。
+    const filterMap = new Map<string, string>();
     for (const [k, v] of Object.entries(query)) {
       const m = k.match(/^filter\[(.+)\]$/);
-      if (m) filters[m[1]] = v;
+      if (m) filterMap.set(m[1], v);
     }
+    const filters = Object.fromEntries(filterMap);
     // レコード公開範囲(owner/org)に応じてアクセス可能な作成者に限定（管理権限ありは全件）
     const allowed = await this.permission.allowedCreatorIds(appId, user.userId, user.role, 'view', perm.canManage);
     // 対象社員フィールド基準の絞り込み（設定時のみ・非特権ユーザー）

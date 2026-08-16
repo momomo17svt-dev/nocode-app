@@ -82,7 +82,9 @@ function normalizeType(raw: any): string | null {
 export function sanitizeDefinition(raw: any): AppDefinition {
   const r = raw && typeof raw === 'object' ? raw : {};
   const used = new Set<string>();
-  const byCode: Record<string, DefinitionField> = {};
+  // slugCode は `__proto__` をそのまま通すため、素のオブジェクトを索引に使うと
+  // 添字代入がプロトタイプを差し替えてしまう。Map なら添字名が意味を持たない。
+  const byCode = new Map<string, DefinitionField>();
 
   const rawFields: any[] = Array.isArray(r.fields) ? r.fields.slice(0, MAX_FIELDS) : [];
   const fields: DefinitionField[] = [];
@@ -113,7 +115,7 @@ export function sanitizeDefinition(raw: any): AppDefinition {
       settings,
     };
     fields.push(field);
-    byCode[field.fieldCode] = field;
+    byCode.set(field.fieldCode, field);
   });
 
   const def: AppDefinition = {
@@ -127,7 +129,7 @@ export function sanitizeDefinition(raw: any): AppDefinition {
   // プロセス管理: statusField が実在し選択系で、statuses が揃うときのみ採用
   const pc = r.processConfig;
   if (pc && typeof pc === 'object') {
-    const sf = byCode[asString(pc.statusField, 100)];
+    const sf = byCode.get(asString(pc.statusField, 100));
     let statuses = asStringArray(pc.statuses);
     if (sf && ['status', 'select', 'radio'].includes(sf.fieldType)) {
       if (statuses.length === 0) statuses = asStringArray(sf.settings.options);
@@ -150,13 +152,13 @@ export function sanitizeDefinition(raw: any): AppDefinition {
         const name = asString(a?.name, 100);
         const prompt = asString(a?.prompt, 8000);
         if (!name || !prompt) return null;
-        const targetOk = a?.output === 'field' && byCode[asString(a?.targetField, 100)];
+        const target = a?.output === 'field' ? byCode.get(asString(a?.targetField, 100)) : undefined;
         return {
           id: asString(a?.id, 60) || `act_${Date.now().toString(36)}_${i}`,
           name,
           prompt,
-          output: targetOk ? 'field' : 'show',
-          ...(targetOk ? { targetField: byCode[asString(a.targetField, 100)].fieldCode } : {}),
+          output: target ? 'field' : 'show',
+          ...(target ? { targetField: target.fieldCode } : {}),
         } as DefinitionAiAction;
       })
       .filter((a): a is DefinitionAiAction => !!a);
