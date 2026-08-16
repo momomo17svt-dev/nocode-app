@@ -5,6 +5,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EmbeddingService } from '../ai/embedding.service';
 import { PermissionService } from '../permissions/permission.service';
 import { evalFormula, evalRules, formatAutoNumber } from './compute.util';
+import { sanitizeRecordInput } from './record-input.util';
 import { Prisma } from '@prisma/client';
 import { AttachmentsService } from '../attachments/attachments.service';
 
@@ -297,9 +298,18 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async create(appId: string, dataJson: any, userId: string) {
+  /**
+   * @param options.trustedSource サーバ内部で組み立てた値（複製など）は
+   *   フィールド定義による絞り込みを掛けない。項目を削除したアプリの過去値まで
+   *   複製時に落としてしまうため。外部入力では必ず既定(false)のまま使う。
+   */
+  async create(appId: string, dataJson: any, userId: string, options?: { trustedSource?: boolean }) {
     const record = await this.prisma.$transaction(async (tx) => {
-      const data = await this.computeFields(tx, appId, dataJson, true);
+      const fields = await tx.field.findMany({ where: { appId } });
+      const clean = options?.trustedSource
+        ? { ...(dataJson || {}) }
+        : sanitizeRecordInput(fields, dataJson);
+      const data = await this.computeFields(tx, appId, clean, true, undefined, fields);
       return tx.record.create({
         data: { appId, dataJson: data, createdBy: userId, updatedBy: userId },
       });
@@ -321,9 +331,13 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
     await this.assertProcessApprover(existing, dataJson, userId, !!actor?.canManage);
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      // 自動採番は既存値を保持しつつ、計算フィールドは再計算
-      const merged = { ...(existing.dataJson as any), ...dataJson };
-      const data = await this.computeFields(tx, existing.appId, merged, false, existing.dataJson as any);
+      // 自動採番は既存値を保持しつつ、計算フィールドは再計算。
+      // 絞り込みは今回届いた差分だけに掛ける（保存済みの値は既存フィールドが
+      // 削除済みでもそのまま残す）。
+      const fields = await tx.field.findMany({ where: { appId: existing.appId } });
+      const patch = sanitizeRecordInput(fields, dataJson);
+      const merged = { ...(existing.dataJson as any), ...patch };
+      const data = await this.computeFields(tx, existing.appId, merged, false, existing.dataJson as any, fields);
       const changed = await tx.record.updateMany({
         where: { id, version: expectedVersion },
         data: { dataJson: data, updatedBy: userId, version: { increment: 1 } },
@@ -457,8 +471,9 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
     input: Record<string, any>,
     isCreate: boolean,
     existingData?: Record<string, any>,
+    preloadedFields?: { fieldCode: string; fieldType: string; settings: any }[],
   ): Promise<Record<string, any>> {
-    const fields = await tx.field.findMany({ where: { appId } });
+    const fields = preloadedFields ?? (await tx.field.findMany({ where: { appId } }));
     const result: Record<string, any> = { ...input };
 
     // 自動採番: 新規作成時は未設定なら採番。更新時はクライアントによる上書きを無視し保存済み値を維持。
@@ -598,7 +613,7 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
     for (const f of fields) {
       if (f.fieldType === 'auto_number') delete data[f.fieldCode];
     }
-    return this.create(existing.appId, data, userId);
+    return this.create(existing.appId, data, userId, { trustedSource: true });
   }
 
   async remove(id: string, deletedBy: string) {
@@ -844,7 +859,7 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
       // 定義済みフィールドのみ取り込む
       const data: Record<string, any> = {};
       for (const [k, v] of Object.entries(raw)) {
-        if (validCodes.has(k)) data[k] = v;
+        if (validCodes.has(k)) data[k] = decodeCsvCell(v);
       }
       const missing = required.filter((c) => data[c] === undefined || data[c] === '');
       if (missing.length > 0) {
@@ -859,12 +874,31 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
   }
 }
 
+/**
+ * Excel/表計算ソフトが「数式」として解釈しはじめる先頭文字。
+ * この文字で始まるセルをそのまま出力すると、CSVを開いた人の環境で
+ * 意図しない式(=cmd|... 等)が実行され得る(CSVインジェクション)。
+ */
+const CSV_FORMULA_LEAD = /^[=+\-@\t\r]/;
+
 function csvCell(v: any): string {
-  const s =
+  const raw =
     v === null || v === undefined
       ? ''
       : typeof v === 'object'
         ? JSON.stringify(v)
         : String(v);
+  // 数式化を防ぐためシングルクォートを前置する。Excelでは表示されず、
+  // 本アプリへ取り込み直す際は decodeCsvCell が元に戻す。
+  const s = CSV_FORMULA_LEAD.test(raw) ? "'" + raw : raw;
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/**
+ * csvCell が付けた無害化用シングルクォートだけを取り除く。
+ * エクスポート→インポートの往復で値が変質しないようにするための対。
+ */
+function decodeCsvCell(v: any): any {
+  if (typeof v !== 'string') return v;
+  return v.startsWith("'") && CSV_FORMULA_LEAD.test(v.slice(1)) ? v.slice(1) : v;
 }

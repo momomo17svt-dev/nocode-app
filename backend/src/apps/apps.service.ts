@@ -231,7 +231,8 @@ export class AppsService {
     if (data.withSamples) {
       for (const sample of getSampleData(templateId)) {
         try {
-          await this.records.create(app.id, sample, creatorId);
+          // テンプレート同梱のサンプルはサーバ側で用意した値なので、外部入力向けの絞り込みは掛けない。
+          await this.records.create(app.id, sample, creatorId, { trustedSource: true });
         } catch {
           /* サンプル投入失敗は無視 */
         }
@@ -416,7 +417,7 @@ export class AppsService {
             }
           }
           try {
-            const rec = await this.records.create(appId, sample, creatorId);
+            const rec = await this.records.create(appId, sample, creatorId, { trustedSource: true });
             // 子が参照する表示フィールドの値をキーに、作成レコードを登録。
             for (const df of indexFields) {
               const v = sample[df];

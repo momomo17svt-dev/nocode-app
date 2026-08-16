@@ -81,6 +81,8 @@ describe('RecordsService', () => {
 
     it('計算フィールドをサーバ側で評価する', async () => {
       tx.field.findMany.mockResolvedValue([
+        { fieldType: 'number', fieldCode: 'qty' },
+        { fieldType: 'number', fieldCode: 'price' },
         { fieldType: 'calc', fieldCode: 'total', settings: { formula: 'qty * price' } },
       ]);
 
@@ -118,6 +120,8 @@ describe('RecordsService', () => {
     });
 
     it('既存データとマージし、変更履歴を記録する', async () => {
+      tx.field.findMany.mockResolvedValue([{ fieldType: 'text', fieldCode: 'name' }]);
+
       await service.update('r1', { name: 'new' }, 'u1', 1);
 
       const hist = tx.recordHistory.create.mock.calls[0][0];
@@ -277,6 +281,17 @@ describe('RecordsService', () => {
       expect(res.errors[0].row).toBe(2);
       expect(res.errors[0].message).toContain('必須');
     });
+
+    it('エクスポートが付けた無害化用クォートを取り除いて取り込む', async () => {
+      prisma.field.findMany.mockResolvedValue([{ fieldCode: 'note', required: false, fieldType: 'text' }]);
+      tx.field.findMany.mockResolvedValue([{ fieldCode: 'note', fieldType: 'text' }]);
+
+      await service.importRows('app1', [{ note: "'=A1" }, { note: "'通常" }], 'u1');
+
+      // 数式化する先頭文字の直前にあるクォートだけを外す（それ以外は原文のまま）
+      expect(tx.record.create.mock.calls[0][0].data.dataJson.note).toBe('=A1');
+      expect(tx.record.create.mock.calls[1][0].data.dataJson.note).toBe("'通常");
+    });
   });
 
   describe('exportCsv', () => {
@@ -291,6 +306,24 @@ describe('RecordsService', () => {
       const [bomHeader, line] = csv.split('\r\n');
       expect(bomHeader).toBe('﻿レコードID,氏名,メモ');
       expect(line).toBe('r1,Alice,"a,b""c"');
+    });
+
+    it('数式として解釈される先頭文字を無害化する', async () => {
+      prisma.field.findMany.mockResolvedValue([{ fieldCode: 'note', label: 'メモ' }]);
+      prisma.record.findMany.mockResolvedValue([
+        { id: 'r1', dataJson: { note: '=cmd|calc' } },
+        { id: 'r2', dataJson: { note: '+1234' } },
+        { id: 'r3', dataJson: { note: '@SUM(A1)' } },
+        { id: 'r4', dataJson: { note: '-5' } },
+        { id: 'r5', dataJson: { note: '通常の値' } },
+      ]);
+
+      const lines = (await service.exportCsv('app1')).split('\r\n');
+      expect(lines[1]).toBe("r1,'=cmd|calc");
+      expect(lines[2]).toBe("r2,'+1234");
+      expect(lines[3]).toBe("r3,'@SUM(A1)");
+      expect(lines[4]).toBe("r4,'-5");
+      expect(lines[5]).toBe('r5,通常の値');
     });
   });
 

@@ -18,8 +18,9 @@
 
 ## 文書と公開設定
 
-- [ ] README、LICENSE、SECURITY、CONTRIBUTINGが最新
+- [ ] README（日本語・英語）、LICENSE、SECURITY、CONTRIBUTINGが最新
 - [ ] 第三者ライセンス・地図データ条件を確認
-- [ ] GitHub ActionsとDependabotが有効
+- [ ] GitHub Actions、Dependabot、CodeQLが有効
 - [ ] Private vulnerability reportingを有効化
+- [ ] 未修正の指摘を含む内部レポートを同梱していない
 - [ ] `v0.1.0`タグとリリースノートを作成

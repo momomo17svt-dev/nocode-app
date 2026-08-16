@@ -24,7 +24,11 @@ if errorlevel 1 (
 
 if not exist "%PG_BIN%\postgres.exe" (
     echo [ERROR] PostgreSQL not found at "%PG_BIN%".
-    echo   Run extract-postgresql.bat first ^(unpacks postgresql.zip into .\pgsql^).
+    echo   PostgreSQL is not bundled with this repository. Do one of:
+    echo     - Install PostgreSQL 16+ and set NOCODEAPP_PG_HOME to its root folder
+    echo     - Extract portable Windows binaries into .\pgsql ^(pgsql\bin\postgres.exe^)
+    echo     - Offline distributions only: run extract-postgresql.bat
+    echo   See docs\setup-guide.md for download links.
     pause
     exit /b 1
 )

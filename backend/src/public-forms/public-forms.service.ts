@@ -2,6 +2,7 @@ import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestj
 import { PrismaService } from '../prisma/prisma.service';
 import { RecordsService } from '../records/records.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { assertRequiredFilled } from '../records/record-input.util';
 import {
   ANONYMOUS_USER_ID,
   PUBLIC_SAFE_FIELD_TYPES,
@@ -54,15 +55,16 @@ export class PublicFormsService {
   async submit(token: string, data: Record<string, any>, ip?: string) {
     const app = await this.getEnabledApp(token);
     this.assertSubmissionRate(token, ip);
-    const allowed = new Set(
-      app.fields
-        .filter((f) => PUBLIC_INPUT_FIELD_TYPES.has(f.fieldType))
-        .map((f) => f.fieldCode),
-    );
+    const inputFields = app.fields.filter((f) => PUBLIC_INPUT_FIELD_TYPES.has(f.fieldType));
+    const allowed = new Set(inputFields.map((f) => f.fieldCode));
     const clean: Record<string, any> = {};
     for (const [k, v] of Object.entries(data || {})) {
       if (allowed.has(k)) clean[k] = v;
     }
+    // 匿名投稿は画面側の検証を信頼できないため、必須と入力量をサーバ側で確認する。
+    // 必須判定はフォームに出している項目だけが対象（画面に出ない必須項目を
+    // 求めると、そのフォームが恒久的に投稿不能になるため）。
+    assertRequiredFilled(inputFields, clean);
     const record = await this.records.create(app.id, clean, ANONYMOUS_USER_ID);
     await this.audit.log({
       userId: null,

@@ -1,5 +1,7 @@
 # ノーコードApp
 
+*[English README](README.en.md)*
+
 ノーコードAppは、LAN内・オフライン環境でも利用できる業務アプリ基盤です。フォーム、一覧、権限、ワークフロー、ダッシュボード、監査ログ、任意のLLM連携などを備えています。
 
 > 現在は公開準備中の`v0.1.0`です。インターネットへ直接公開する前に、[SECURITY.md](SECURITY.md)と[既知の課題](docs/known-issues.md)を確認してください。
@@ -31,7 +33,7 @@ docker compose up -d --build
 
 ## Dockerなしで起動（Windows）
 
-Node.js 22とPostgreSQL 16以降を用意します。ポータブルPostgreSQLを使う場合は`pgsql/`へ配置するか、`NOCODEAPP_PG_HOME`で場所を指定します。
+Node.js 22とPostgreSQL 16以降を用意します。**PostgreSQL本体はリポジトリに含まれません。** ポータブル版を使う場合は各自で入手して`pgsql/`へ展開するか、`NOCODEAPP_PG_HOME`で場所を指定します。入手先は[セットアップガイド](docs/setup-guide.md)にあります。
 
 ```text
 setup.bat
