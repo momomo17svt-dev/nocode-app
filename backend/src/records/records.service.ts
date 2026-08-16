@@ -464,7 +464,8 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
     const uniq = Array.from(new Set(userIds)).filter(Boolean);
     let created = 0;
     for (const uid of uniq) {
-      await this.create(appId, { ...baseData, [assigneeField]: uid }, actorId);
+      // 書き込む項目名はDBで実在を確認した値を使う（クライアント文字列をそのまま鍵にしない）。
+      await this.create(appId, { ...baseData, [assignee.fieldCode]: uid }, actorId);
       created++;
     }
     return { created };

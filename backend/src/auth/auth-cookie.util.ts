@@ -5,24 +5,31 @@ export const SESSION_COOKIE = 'nocode_session';
 export const CSRF_COOKIE = 'nocode_csrf';
 export const CSRF_HEADER = 'x-csrf-token';
 
+/** 本アプリが発行するCookie。解析結果に載せるのはこの2つだけ。 */
+const KNOWN_COOKIES: readonly string[] = [SESSION_COOKIE, CSRF_COOKIE];
+
+/**
+ * Cookieヘッダーから本アプリのCookieだけを取り出す。
+ * Cookie名は送信側が自由に決められるため、受け取った名前をそのまま
+ * プロパティ名には使わない（`__proto__`のような名前が紛れ込む余地をなくす）。
+ */
 export function parseCookies(header?: string): Record<string, string> {
-  if (!header) return {};
-  // Cookie名は送信側が自由に決められる。素のオブジェクトへ代入すると
-  // `__proto__` がプロトタイプ設定に触れるため、nullプロトタイプへ集めてから戻す
-  // （スプレッドはセッターを経由しないので、ここでは通常のプロパティとして複写される）。
-  const cookies: Record<string, string> = Object.create(null);
+  const cookies: Record<string, string> = {};
+  if (!header) return cookies;
   for (const part of header.split(';')) {
     const separator = part.indexOf('=');
     if (separator < 1) continue;
     const name = part.slice(0, separator).trim();
+    const known = KNOWN_COOKIES.find((cookie) => cookie === name);
+    if (!known) continue;
     const rawValue = part.slice(separator + 1).trim();
     try {
-      cookies[name] = decodeURIComponent(rawValue);
+      cookies[known] = decodeURIComponent(rawValue);
     } catch {
-      cookies[name] = rawValue;
+      cookies[known] = rawValue;
     }
   }
-  return { ...cookies };
+  return cookies;
 }
 
 export function sessionTokenFromRequest(req: Request): string | null {

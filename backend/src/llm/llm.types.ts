@@ -92,17 +92,48 @@ const PROVIDERS = new Set<LlmProvider>([
   'lmstudio', 'ollama', 'openai', 'openrouter', 'groq', 'gemini', 'mistral', 'custom',
 ]);
 
+/** ベースURLのホストからプロバイダーを推測するための対応表。 */
+const PROVIDER_HOSTS: readonly [string, LlmProvider][] = [
+  ['api.openai.com', 'openai'],
+  ['openrouter.ai', 'openrouter'],
+  ['api.groq.com', 'groq'],
+  ['generativelanguage.googleapis.com', 'gemini'],
+  ['api.mistral.ai', 'mistral'],
+];
+
+/** ローカルLLMの既定ポート。 */
+const PROVIDER_PORTS: readonly [string, LlmProvider][] = [
+  ['11434', 'ollama'],
+  ['1234', 'lmstudio'],
+];
+
+/**
+ * プロバイダー名を決める。明示指定が有効ならそれを使い、無ければベースURLから推測する。
+ *
+ * 推測はホストとポートの完全一致で行う。部分一致だと
+ * `https://api.openai.com.example.net/` のような別ホストや、パスに `1234` を
+ * 含むだけのURLまで拾ってしまうため。
+ */
 export function normalizeProvider(value: unknown, baseUrl = ''): LlmProvider {
   if (typeof value === 'string' && PROVIDERS.has(value as LlmProvider)) return value as LlmProvider;
-  const url = baseUrl.toLowerCase();
-  if (url.includes('11434')) return 'ollama';
-  if (url.includes('api.openai.com')) return 'openai';
-  if (url.includes('openrouter.ai')) return 'openrouter';
-  if (url.includes('api.groq.com')) return 'groq';
-  if (url.includes('generativelanguage.googleapis.com')) return 'gemini';
-  if (url.includes('api.mistral.ai')) return 'mistral';
-  if (url.includes('1234')) return 'lmstudio';
-  return baseUrl ? 'custom' : 'lmstudio';
+  if (!baseUrl) return 'lmstudio';
+
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return 'custom';
+  }
+  const host = parsed.hostname.toLowerCase();
+
+  const byPort = PROVIDER_PORTS.find(([port]) => parsed.port === port);
+  if (byPort && (host === 'localhost' || host === '127.0.0.1' || host === 'host.docker.internal')) {
+    return byPort[1];
+  }
+  const byHost = PROVIDER_HOSTS.find(([known]) => host === known || host.endsWith(`.${known}`));
+  if (byHost) return byHost[1];
+  if (byPort) return byPort[1];
+  return 'custom';
 }
 
 const envProvider = normalizeProvider(process.env.LLM_PROVIDER, process.env.LLM_BASE_URL || '');

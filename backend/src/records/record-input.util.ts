@@ -35,16 +35,19 @@ export function sanitizeRecordInput(
   fields: FieldLike[],
   input: Record<string, any> | null | undefined,
 ): Record<string, any> {
-  const known = new Map(fields.map((f) => [f.fieldCode, f]));
+  const source = input || {};
   // フィールドコードは英字・数字・下線を許すため`__proto__`という項目を定義できる。
   // 素のオブジェクトへ代入するとプロトタイプ汚染に触れるので、nullプロトタイプへ集める。
   const clean: Record<string, any> = Object.create(null);
 
-  for (const [key, value] of Object.entries(input || {})) {
-    const field = known.get(key);
-    if (!field) continue;
+  // 入力側のキーではなくフィールド定義側を回す。書き込むプロパティ名が必ず
+  // アプリ定義由来になり、外部から任意の名前を持ち込めない。
+  for (const field of fields) {
+    const code = field.fieldCode;
+    if (!Object.prototype.hasOwnProperty.call(source, code)) continue;
+    const value = source[code];
     assertValueWithinLimits(field, value, 0);
-    clean[key] = value;
+    clean[code] = value;
   }
 
   const size = JSON.stringify(clean).length;

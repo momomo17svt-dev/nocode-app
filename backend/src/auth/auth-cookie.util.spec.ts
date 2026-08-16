@@ -3,9 +3,10 @@ import { csrfTokensMatch, parseCookies, sessionTokenFromRequest } from './auth-c
 
 describe('auth-cookie utilities', () => {
   it('Cookieヘッダーを安全に解析する', () => {
-    expect(parseCookies('nocode_session=jwt; name=hello%20world')).toEqual({
+    // 本アプリのCookieだけを取り出し、無関係なCookieは無視する
+    expect(parseCookies('nocode_session=jwt; nocode_csrf=hello%20world; other=x')).toEqual({
       nocode_session: 'jwt',
-      name: 'hello world',
+      nocode_csrf: 'hello world',
     });
   });
 
