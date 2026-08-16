@@ -10,6 +10,8 @@ export const MAX_TEXT_LENGTH = 100_000;
 export const MAX_ARRAY_ITEMS = 1_000;
 export const MAX_SUBTABLE_ROWS = 1_000;
 export const MAX_RECORD_CHARS = 2_000_000;
+/** CSVインポート1回で受け付ける行数。クライアントが渡す配列長をそのまま回さないための上限。 */
+export const MAX_IMPORT_ROWS = 10_000;
 const MAX_DEPTH = 10;
 
 export type FieldLike = {
@@ -34,7 +36,9 @@ export function sanitizeRecordInput(
   input: Record<string, any> | null | undefined,
 ): Record<string, any> {
   const known = new Map(fields.map((f) => [f.fieldCode, f]));
-  const clean: Record<string, any> = {};
+  // フィールドコードは英字・数字・下線を許すため`__proto__`という項目を定義できる。
+  // 素のオブジェクトへ代入するとプロトタイプ汚染に触れるので、nullプロトタイプへ集める。
+  const clean: Record<string, any> = Object.create(null);
 
   for (const [key, value] of Object.entries(input || {})) {
     const field = known.get(key);
@@ -49,7 +53,9 @@ export function sanitizeRecordInput(
       `レコード全体の入力量が上限(${MAX_RECORD_CHARS.toLocaleString()}文字)を超えています`,
     );
   }
-  return clean;
+  // 呼び出し側とPrismaが素のオブジェクトを前提にできるよう戻す。
+  // スプレッドはセッターを経由しないため、ここでプロトタイプ汚染は起きない。
+  return { ...clean };
 }
 
 /** 必須項目が空でないことを確認する（公開フォームなど、画面側の検証を信頼できない経路向け）。 */

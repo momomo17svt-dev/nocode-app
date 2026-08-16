@@ -1,5 +1,6 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { RecordsService } from './records.service';
+import { MAX_IMPORT_ROWS } from './record-input.util';
 
 /**
  * records.service の単体テスト。Prisma / 通知 / 埋め込み / 権限を全てモックし、
@@ -47,7 +48,11 @@ describe('RecordsService', () => {
         deleteMany: jest.fn(),
       },
       deletedRecord: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), delete: jest.fn() },
-      field: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
+      field: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       app: { findUnique: jest.fn().mockResolvedValue({ name: 'App', processConfig: null }) },
       user: { findMany: jest.fn().mockResolvedValue([]) },
       $queryRaw: jest.fn(),
@@ -291,6 +296,35 @@ describe('RecordsService', () => {
       // 数式化する先頭文字の直前にあるクォートだけを外す（それ以外は原文のまま）
       expect(tx.record.create.mock.calls[0][0].data.dataJson.note).toBe('=A1');
       expect(tx.record.create.mock.calls[1][0].data.dataJson.note).toBe("'通常");
+    });
+
+    it('行数が上限を超えたら取り込まずに拒否する', async () => {
+      const rows = Array.from({ length: MAX_IMPORT_ROWS + 1 }, () => ({ name: 'x' }));
+      await expect(service.importRows('app1', rows, 'u1')).rejects.toThrow(BadRequestException);
+      expect(tx.record.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('bulkDistribute', () => {
+    it('配布先項目がアプリのuser_select項目でなければ拒否する', async () => {
+      prisma.field.findFirst.mockResolvedValue(null);
+      await expect(service.bulkDistribute('app1', 'not_a_user_field', ['u2'], {}, 'u1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(tx.record.create).not.toHaveBeenCalled();
+    });
+
+    it('user_select項目なら利用者ごとにレコードを作る', async () => {
+      prisma.field.findFirst.mockResolvedValue({ fieldCode: 'assignee', fieldType: 'user_select' });
+      tx.field.findMany.mockResolvedValue([
+        { fieldCode: 'assignee', fieldType: 'user_select' },
+        { fieldCode: 'title', fieldType: 'text' },
+      ]);
+
+      const res = await service.bulkDistribute('app1', 'assignee', ['u2', 'u3', 'u2'], { title: '依頼' }, 'u1');
+
+      expect(res).toEqual({ created: 2 }); // 重複した u2 は1件
+      expect(tx.record.create.mock.calls[0][0].data.dataJson).toMatchObject({ title: '依頼', assignee: 'u2' });
     });
   });
 

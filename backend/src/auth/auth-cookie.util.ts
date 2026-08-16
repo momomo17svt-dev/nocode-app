@@ -7,9 +7,13 @@ export const CSRF_HEADER = 'x-csrf-token';
 
 export function parseCookies(header?: string): Record<string, string> {
   if (!header) return {};
-  return header.split(';').reduce<Record<string, string>>((cookies, part) => {
+  // Cookie名は送信側が自由に決められる。素のオブジェクトへ代入すると
+  // `__proto__` がプロトタイプ設定に触れるため、nullプロトタイプへ集めてから戻す
+  // （スプレッドはセッターを経由しないので、ここでは通常のプロパティとして複写される）。
+  const cookies: Record<string, string> = Object.create(null);
+  for (const part of header.split(';')) {
     const separator = part.indexOf('=');
-    if (separator < 1) return cookies;
+    if (separator < 1) continue;
     const name = part.slice(0, separator).trim();
     const rawValue = part.slice(separator + 1).trim();
     try {
@@ -17,8 +21,8 @@ export function parseCookies(header?: string): Record<string, string> {
     } catch {
       cookies[name] = rawValue;
     }
-    return cookies;
-  }, {});
+  }
+  return { ...cookies };
 }
 
 export function sessionTokenFromRequest(req: Request): string | null {

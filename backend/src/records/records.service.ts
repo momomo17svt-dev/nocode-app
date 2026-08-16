@@ -1,11 +1,11 @@
-import { ConflictException, Injectable, NotFoundException, ForbiddenException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ForbiddenException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmbeddingService } from '../ai/embedding.service';
 import { PermissionService } from '../permissions/permission.service';
 import { evalFormula, evalRules, formatAutoNumber } from './compute.util';
-import { sanitizeRecordInput } from './record-input.util';
+import { MAX_IMPORT_ROWS, sanitizeRecordInput } from './record-input.util';
 import { Prisma } from '@prisma/client';
 import { AttachmentsService } from '../attachments/attachments.service';
 
@@ -455,6 +455,12 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
     baseData: Record<string, any>,
     actorId: string,
   ): Promise<{ created: number }> {
+    // 配布先を書き込む項目はクライアント指定なので、そのアプリの user_select 項目であることを確かめる。
+    const assignee = await this.prisma.field.findFirst({
+      where: { appId, fieldCode: assigneeField, fieldType: 'user_select' },
+    });
+    if (!assignee) throw new BadRequestException('配布先を設定するユーザー選択項目が見つかりません');
+
     const uniq = Array.from(new Set(userIds)).filter(Boolean);
     let created = 0;
     for (const uid of uniq) {
@@ -847,6 +853,11 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
     rows: Record<string, any>[],
     userId: string,
   ): Promise<{ created: number; errors: { row: number; message: string }[] }> {
+    if ((rows?.length ?? 0) > MAX_IMPORT_ROWS) {
+      throw new BadRequestException(
+        `一度に取り込めるのは${MAX_IMPORT_ROWS.toLocaleString()}行までです。ファイルを分割してください`,
+      );
+    }
     const fields = await this.prisma.field.findMany({ where: { appId } });
     const required = fields.filter((f) => f.required).map((f) => f.fieldCode);
     const validCodes = new Set(fields.map((f) => f.fieldCode));
@@ -856,8 +867,8 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
 
     for (let i = 0; i < rows.length; i++) {
       const raw = rows[i];
-      // 定義済みフィールドのみ取り込む
-      const data: Record<string, any> = {};
+      // 定義済みフィールドのみ取り込む（キーはフィールドコード＝`__proto__`もあり得るのでnullプロトタイプへ）
+      const data: Record<string, any> = Object.create(null);
       for (const [k, v] of Object.entries(raw)) {
         if (validCodes.has(k)) data[k] = decodeCsvCell(v);
       }

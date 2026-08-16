@@ -58,7 +58,7 @@ describe('Records lifecycle (e2e)', () => {
     const updated = await request(http())
       .put(`/api/records/${id}`)
       .set(bearer(token))
-      .send({ data: { qty: 3, no: 'HACK' } })
+      .send({ data: { qty: 3, no: 'HACK' }, expectedVersion: created.body.version })
       .expect(200);
     expect(updated.body.dataJson.total).toBe(150); // 再計算
     expect(updated.body.dataJson.no).toBe('INV-0001'); // 採番は保持

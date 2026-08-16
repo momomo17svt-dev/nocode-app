@@ -70,7 +70,10 @@ function looksLikeText(buffer: Buffer): boolean {
 }
 
 export function sanitizeUploadName(name: string): string {
+  // 正規表現を掛ける前に長さを切る。末尾一致の `[. ]+$` は極端に長い名前で
+  // 後戻り探索が膨らむため、返す長さ(200)より十分大きいところで先に抑える。
   const safe = basename(name || 'file')
+    .slice(0, 300)
     .replace(/[\u0000-\u001f\u007f<>:"/\\|?*]/g, '_')
     .replace(/[. ]+$/g, '')
     .trim();
