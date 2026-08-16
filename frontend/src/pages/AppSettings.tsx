@@ -802,7 +802,7 @@ function CalcSettings({ value, condFields, onChange }: {
         </div>
       </Field>
       {mode === 'formula' ? (
-        <Field label="計算式（例: price * qty）" hint="フィールドコードで参照。+ - * / ( ) ・比較( > < >= <= == != )・if(条件,真,偽)・min/max が使えます。">
+        <Field label="計算式（例: price * qty）" hint="フィールドコードで参照。+ - * / ( ) ・比較( > < >= <= == != )・if(条件,真,偽)・min/max・明細の集計 sum(明細.列) avg(明細.列) count(明細) が使えます。">
           <input className="input" value={value?.formula || ''} onChange={(e) => set({ formula: e.target.value })} />
         </Field>
       ) : (
@@ -848,8 +848,40 @@ function RuleTable({ value, condFields, onChange }: {
               <select className="input w-auto" value={c.op} onChange={(e) => updCond(i, ci, { op: e.target.value })}>
                 {RULE_OPS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
               </select>
-              {!['empty', 'notempty'].includes(c.op) && <input className="input w-20" value={c.value ?? ''} onChange={(e) => updCond(i, ci, { value: e.target.value })} />}
-              {c.op === 'between' && <><span className="text-xs text-muted">〜</span><input className="input w-20" value={c.value2 ?? ''} onChange={(e) => updCond(i, ci, { value2: e.target.value })} /></>}
+              {!['empty', 'notempty'].includes(c.op) && (
+                <>
+                  {/* 比較の右辺は固定値か別項目。項目を選ぶと valueField として保存し、その時々の値と比べる。 */}
+                  <select
+                    className="input w-auto"
+                    value={c.valueField ? 'field' : 'value'}
+                    onChange={(e) => updCond(i, ci, e.target.value === 'field'
+                      ? { valueField: condFields[0]?.fieldCode || '', value: undefined }
+                      : { valueField: undefined, value: '' })}
+                  >
+                    <option value="value">固定値</option>
+                    <option value="field">項目</option>
+                  </select>
+                  {c.valueField ? (
+                    <select className="input w-auto" value={c.valueField} onChange={(e) => updCond(i, ci, { valueField: e.target.value })}>
+                      {condFields.map((f) => <option key={f.fieldCode} value={f.fieldCode}>{f.label}</option>)}
+                    </select>
+                  ) : (
+                    <input className="input w-20" value={c.value ?? ''} onChange={(e) => updCond(i, ci, { value: e.target.value })} />
+                  )}
+                </>
+              )}
+              {c.op === 'between' && (
+                <>
+                  <span className="text-xs text-muted">〜</span>
+                  {c.value2Field ? (
+                    <select className="input w-auto" value={c.value2Field} onChange={(e) => updCond(i, ci, { value2Field: e.target.value })}>
+                      {condFields.map((f) => <option key={f.fieldCode} value={f.fieldCode}>{f.label}</option>)}
+                    </select>
+                  ) : (
+                    <input className="input w-20" value={c.value2 ?? ''} onChange={(e) => updCond(i, ci, { value2: e.target.value })} />
+                  )}
+                </>
+              )}
               {(r.when?.length || 0) > 1 && (
                 <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => delCond(i, ci)} aria-label="条件を削除"><X className="size-3.5" /></button>
               )}

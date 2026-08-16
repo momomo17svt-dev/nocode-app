@@ -163,7 +163,7 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { fieldCode: 'ref_url', fieldType: 'link', label: '関連URL' },
 
       // ── 金額・自動計算 ──
-      { fieldCode: 'sec_money', fieldType: 'section', label: '金額・自動計算', settings: { description: '明細・税込合計・進捗から健全度を自動算出します（計算式とルール表の両方の例）。' } },
+      { fieldCode: 'sec_money', fieldType: 'section', label: '金額・自動計算', settings: { description: '明細の合計・税込合計・進捗からの健全度を自動算出します（集計関数・計算式・ルール表の例）。' } },
       {
         fieldCode: 'items', fieldType: 'subtable', label: '明細',
         settings: { columns: [
@@ -173,7 +173,7 @@ export const APP_TEMPLATES: AppTemplate[] = [
           { fieldCode: 'amount', fieldType: 'calc', label: '金額', settings: { formula: 'qty * unit_price', unit: '円', thousandSeparator: true } },
         ] },
       },
-      { fieldCode: 'estimate', fieldType: 'number', label: '見積金額（税抜）', settings: { unit: '円', thousandSeparator: true } },
+      { fieldCode: 'estimate', fieldType: 'calc', label: '見積金額（税抜）', settings: { formula: 'sum(items.amount)', unit: '円', thousandSeparator: true } },
       { fieldCode: 'tax_rate', fieldType: 'number', label: '消費税率', settings: { unit: '%', defaultValue: 10 } },
       { fieldCode: 'total', fieldType: 'calc', label: '税込合計', settings: { formula: 'estimate + estimate * tax_rate / 100', unit: '円', thousandSeparator: true } },
       { fieldCode: 'progress', fieldType: 'number', label: '進捗率', settings: { unit: '%' } },
@@ -330,6 +330,21 @@ export const APP_TEMPLATES: AppTemplate[] = [
       statuses: ['未回答', '回答済'],
       actions: [{ from: '未回答', to: '回答済', label: '回答済にする' }],
     },
+    views: [
+      { name: '未回答', columns: ['target_user', 'theme', 'answer_status', 'due_date'], conditions: [{ field: 'answer_status', op: 'eq', value: '未回答' }], sort: { field: 'due_date', order: 'asc' } },
+      { name: 'テーマ別', columns: ['theme', 'target_user', 'answer_status', 'answered_date'], conditions: [], sort: { field: 'theme', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '回収状況',
+      widgets: [
+        { type: 'kpi', title: '対象件数', kpiMode: 'count' },
+        { type: 'kpi', title: '未回答', kpiMode: 'count', filters: [{ field: 'answer_status', op: 'eq', value: '未回答' }] },
+        { type: 'kpi', title: '回答率', kpiMode: 'rate' },
+        { type: 'chart', title: 'テーマ別 件数', chartType: 'bar', groupField: 'theme', metric: 'count' },
+        { type: 'chart', title: '回答状況', chartType: 'pie', groupField: 'answer_status', metric: 'count' },
+        { type: 'list', title: '期限が近い未回答', columns: ['theme', 'target_user', 'due_date'], limit: 8, sortField: 'due_date', sortDir: 'asc', filters: [{ field: 'answer_status', op: 'eq', value: '未回答' }] },
+      ],
+    },
   },
   {
     id: 'daily_report',
@@ -354,32 +369,56 @@ export const APP_TEMPLATES: AppTemplate[] = [
     },
     recordViewScope: 'owner',
     recordEditScope: 'owner',
+    views: [
+      { name: '提出済み', columns: ['report_date', 'work_content', 'achievement', 'work_hours', 'status'], conditions: [{ field: 'status', op: 'eq', value: '提出済' }], sort: { field: 'report_date', order: 'desc' } },
+      { name: '下書き', columns: ['report_date', 'work_content', 'issues', 'status'], conditions: [{ field: 'status', op: 'eq', value: '下書き' }], sort: { field: 'report_date', order: 'desc' } },
+    ],
+    dashboard: {
+      name: '日報ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '日報件数', kpiMode: 'count' },
+        { type: 'kpi', title: '下書き', kpiMode: 'count', filters: [{ field: 'status', op: 'eq', value: '下書き' }] },
+        { type: 'kpi', title: '稼働時間 合計', kpiMode: 'sum', valueField: 'work_hours' },
+        { type: 'chart', title: '日別 稼働時間', chartType: 'bar', groupField: 'report_date', metric: 'sum', valueField: 'work_hours' },
+        { type: 'chart', title: 'ステータス別', chartType: 'pie', groupField: 'status', metric: 'count' },
+        { type: 'list', title: '課題が書かれた日報', columns: ['report_date', 'issues', 'status'], limit: 8, sortField: 'report_date', sortDir: 'desc', filters: [{ field: 'issues', op: 'notempty' }] },
+      ],
+    },
   },
   {
     id: 'expense',
     name: '経費精算',
     category: '申請・承認',
     icon: 'Receipt',
-    summary: '申請→承認→却下の承認フロー付き経費精算',
-    description: '経費の申請・承認を管理します。金額の合計集計や、申請中件数の可視化に使えます。',
+    summary: '申請→承認／差戻し／却下。承認は承認者本人だけが実行できます',
+    description:
+      '経費の申請・承認を管理します。承認・差戻し・却下は「承認者」に指定された本人（またはアプリ管理権限を持つ人）だけが実行できます。' +
+      'レコードの公開範囲は所属部署内に限定してあり、他部署からは参照できません。',
+    // 上長が承認するには対象レコードを閲覧・更新できる必要があるため owner ではなく org。
+    // 全社公開を避けつつ、承認操作そのものは下の approver で本人に限定する。
+    recordViewScope: 'org',
+    recordEditScope: 'org',
     fields: [
       { fieldCode: 'request_no', fieldType: 'auto_number', label: '申請番号', settings: { prefix: 'EXP-', padding: 4 } },
       { fieldCode: 'applicant', fieldType: 'user_select', label: '申請者' },
+      { fieldCode: 'approver', fieldType: 'user_select', label: '承認者' },
       { fieldCode: 'title', fieldType: 'text', label: '件名', required: true },
       { fieldCode: 'category', fieldType: 'select', label: '費目', settings: { options: ['交通費', '会議費', '消耗品費', '接待費', 'その他'] } },
       { fieldCode: 'amount', fieldType: 'number', label: '金額', required: true, settings: { unit: '円', thousandSeparator: true } },
       { fieldCode: 'incurred_date', fieldType: 'date', label: '発生日' },
       { fieldCode: 'receipt', fieldType: 'file', label: '領収書' },
-      { fieldCode: 'status', fieldType: 'status', label: '承認ステータス', required: true, settings: { options: ['申請中', '承認', '却下'], defaultValue: '申請中' } },
+      { fieldCode: 'status', fieldType: 'status', label: '承認ステータス', required: true, settings: { options: ['申請中', '承認', '差戻し', '却下'], defaultValue: '申請中' } },
       { fieldCode: 'remarks', fieldType: 'textarea', label: '備考' },
     ],
     processConfig: {
       enabled: true,
       statusField: 'status',
-      statuses: ['申請中', '承認', '却下'],
+      statuses: ['申請中', '承認', '差戻し', '却下'],
       actions: [
-        { from: '申請中', to: '承認', label: '承認する' },
-        { from: '申請中', to: '却下', label: '却下する' },
+        { from: '申請中', to: '承認', label: '承認する', approver: 'approver' },
+        { from: '申請中', to: '差戻し', label: '差し戻す', approver: 'approver' },
+        { from: '申請中', to: '却下', label: '却下する', approver: 'approver' },
+        { from: '差戻し', to: '申請中', label: '再申請する' },
       ],
     },
     reportConfig: {
@@ -388,7 +427,7 @@ export const APP_TEMPLATES: AppTemplate[] = [
           id: 'expense_report', name: '経費精算書', paper: 'A4', orientation: 'portrait',
           title: '経 費 精 算 書', subtitle: '申請番号: {request_no}', showDate: true,
           blocks: [
-            { type: 'fields', columns: 2, fieldCodes: ['applicant', 'category', 'incurred_date', 'amount', 'status'] },
+            { type: 'fields', columns: 2, fieldCodes: ['applicant', 'approver', 'category', 'incurred_date', 'amount', 'status'] },
             { type: 'heading', content: '件名・備考' },
             { type: 'fields', columns: 1, fieldCodes: ['title'] },
             { type: 'text', content: '{remarks}' },
@@ -398,7 +437,8 @@ export const APP_TEMPLATES: AppTemplate[] = [
       ],
     },
     views: [
-      { name: '申請中', columns: ['request_no', 'applicant', 'title', 'category', 'amount', 'status'], conditions: [{ field: 'status', op: 'eq', value: '申請中' }], sort: { field: 'incurred_date', order: 'asc' } },
+      { name: '申請中', columns: ['request_no', 'applicant', 'approver', 'title', 'category', 'amount', 'status'], conditions: [{ field: 'status', op: 'eq', value: '申請中' }], sort: { field: 'incurred_date', order: 'asc' } },
+      { name: '差戻し', columns: ['request_no', 'applicant', 'title', 'amount', 'remarks'], conditions: [{ field: 'status', op: 'eq', value: '差戻し' }], sort: { field: 'incurred_date', order: 'asc' } },
       { name: '承認済み', columns: ['request_no', 'applicant', 'title', 'amount', 'incurred_date'], conditions: [{ field: 'status', op: 'eq', value: '承認' }], sort: { field: 'incurred_date', order: 'desc' } },
     ],
     dashboard: {
@@ -428,10 +468,16 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { fieldCode: 'stock_value', fieldType: 'calc', label: '在庫金額', settings: { formula: 'quantity * unit_price', unit: '円', thousandSeparator: true } },
       { fieldCode: 'location', fieldType: 'text', label: '保管場所' },
       { fieldCode: 'reorder_point', fieldType: 'number', label: '発注点', settings: { unit: '個' } },
+      // 在庫数と発注点の比較はルール表の valueField で行う（固定値では品目ごとの発注点を扱えない）。
+      { fieldCode: 'stock_status', fieldType: 'calc', label: '在庫状況', settings: { mode: 'rules', fallback: '適正', rules: [
+        { when: [{ field: 'quantity', op: '<=', value: 0 }], result: '欠品' },
+        { when: [{ field: 'quantity', op: '<', valueField: 'reorder_point' }], result: '発注要' },
+      ] } },
       { fieldCode: 'updated_on', fieldType: 'date', label: '最終更新日' },
     ],
     views: [
       { name: 'カテゴリ別', columns: ['item_name', 'item_code', 'category', 'quantity', 'unit_price', 'stock_value'], conditions: [], sort: { field: 'category', order: 'asc' } },
+      { name: '発注が必要', columns: ['item_name', 'item_code', 'category', 'quantity', 'reorder_point', 'stock_status'], conditions: [{ field: 'stock_status', op: 'ne', value: '適正' }], sort: { field: 'quantity', order: 'asc' } },
     ],
     dashboard: {
       name: '在庫ダッシュボード',
@@ -465,6 +511,21 @@ export const APP_TEMPLATES: AppTemplate[] = [
       actions: [
         { from: '予約中', to: '利用中', label: '利用開始' },
         { from: '利用中', to: '返却済', label: '返却する' },
+      ],
+    },
+    views: [
+      { name: '未返却', columns: ['equipment', 'reserver', 'start_at', 'end_at', 'status'], conditions: [{ field: 'status', op: 'ne', value: '返却済' }], sort: { field: 'start_at', order: 'asc' } },
+      { name: '備品別', columns: ['equipment', 'reserver', 'start_at', 'purpose', 'status'], conditions: [], sort: { field: 'equipment', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '備品予約ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '予約件数', kpiMode: 'count' },
+        { type: 'kpi', title: '未返却', kpiMode: 'count', filters: [{ field: 'status', op: 'ne', value: '返却済' }] },
+        { type: 'chart', title: '備品別 予約件数', chartType: 'bar', groupField: 'equipment', metric: 'count' },
+        { type: 'chart', title: 'ステータス別', chartType: 'pie', groupField: 'status', metric: 'count' },
+        { type: 'chart', title: '予約者別 件数', chartType: 'bar', groupField: 'reserver', metric: 'count' },
+        { type: 'list', title: '直近の予約', columns: ['equipment', 'reserver', 'start_at', 'status'], limit: 8, sortField: 'start_at', sortDir: 'asc' },
       ],
     },
   },
@@ -529,19 +590,40 @@ export const APP_TEMPLATES: AppTemplate[] = [
           { fieldCode: 'amount', fieldType: 'calc', label: '金額', settings: { formula: 'qty * unit_price', unit: '円', thousandSeparator: true } },
         ] },
       },
+      { fieldCode: 'total', fieldType: 'calc', label: '発注金額', settings: { formula: 'sum(items.amount)', unit: '円', thousandSeparator: true } },
       { fieldCode: 'desired_date', fieldType: 'date', label: '希望納期' },
       { fieldCode: 'assignee', fieldType: 'user_select', label: '発注担当' },
-      { fieldCode: 'status', fieldType: 'status', label: 'ステータス', required: true, settings: { options: ['起票', '発注済', '入荷待ち', '検収完了'], defaultValue: '起票' } },
+      { fieldCode: 'approver', fieldType: 'user_select', label: '承認者' },
+      { fieldCode: 'status', fieldType: 'status', label: 'ステータス', required: true, settings: { options: ['起票', '承認待ち', '発注済', '入荷待ち', '検収完了', '差戻し'], defaultValue: '起票' } },
       { fieldCode: 'remarks', fieldType: 'textarea', label: '備考' },
     ],
     processConfig: {
       enabled: true,
       statusField: 'status',
-      statuses: ['起票', '発注済', '入荷待ち', '検収完了'],
+      statuses: ['起票', '承認待ち', '発注済', '入荷待ち', '検収完了', '差戻し'],
       actions: [
-        { from: '起票', to: '発注済', label: '発注する' },
+        { from: '起票', to: '承認待ち', label: '承認を依頼' },
+        // 発注の確定と差戻しは承認者本人だけが実行できる。
+        { from: '承認待ち', to: '発注済', label: '承認して発注', approver: 'approver' },
+        { from: '承認待ち', to: '差戻し', label: '差し戻す', approver: 'approver' },
+        { from: '差戻し', to: '起票', label: '修正して起票し直す' },
         { from: '発注済', to: '入荷待ち', label: '入荷待ちにする' },
         { from: '入荷待ち', to: '検収完了', label: '検収完了' },
+      ],
+    },
+    views: [
+      { name: '未検収', columns: ['po_no', 'supplier', 'order_date', 'total', 'desired_date', 'assignee', 'status'], conditions: [{ field: 'status', op: 'ne', value: '検収完了' }], sort: { field: 'desired_date', order: 'asc' } },
+      { name: '承認待ち', columns: ['po_no', 'supplier', 'total', 'assignee', 'approver'], conditions: [{ field: 'status', op: 'eq', value: '承認待ち' }], sort: { field: 'order_date', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '発注ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '発注件数', kpiMode: 'count' },
+        { type: 'kpi', title: '未検収', kpiMode: 'open' },
+        { type: 'kpi', title: '発注金額 合計', kpiMode: 'sum', valueField: 'total' },
+        { type: 'chart', title: 'ステータス別', chartType: 'pie', groupField: 'status', metric: 'count' },
+        { type: 'chart', title: '仕入先別 金額', chartType: 'bar', groupField: 'supplier', metric: 'sum', valueField: 'total' },
+        { type: 'list', title: '納期が近い発注', columns: ['po_no', 'supplier', 'desired_date', 'status'], limit: 8, sortField: 'desired_date', sortDir: 'asc' },
       ],
     },
   },
@@ -551,7 +633,12 @@ export const APP_TEMPLATES: AppTemplate[] = [
     category: '人事',
     icon: 'Briefcase',
     summary: '応募者の連絡先と選考ステータスを一元管理',
-    description: '応募者の連絡先（メール・電話）と書類選考〜内定までの選考状況を管理します。',
+    description:
+      '応募者の連絡先（メール・電話）と書類選考〜内定までの選考状況を管理します。' +
+      '応募者の個人情報を扱うため、レコードは採用担当の所属部署内にだけ公開されます。',
+    // 応募者の氏名・連絡先・評価を全社へ出さない。採用に関わる部署内に限定する。
+    recordViewScope: 'org',
+    recordEditScope: 'org',
     fields: [
       { fieldCode: 'applicant', fieldType: 'text', label: '応募者名', required: true },
       { fieldCode: 'email', fieldType: 'email', label: 'メールアドレス' },
@@ -596,24 +683,47 @@ export const APP_TEMPLATES: AppTemplate[] = [
     name: '勤怠・休暇申請',
     category: '申請・承認',
     icon: 'CalendarDays',
-    summary: '休暇・遅刻早退の申請→承認フロー',
-    description: '有給・欠勤・遅刻早退などの申請を受け付け、承認／却下を管理します。',
+    summary: '休暇・遅刻早退の申請→承認／差戻し。承認は承認者本人だけが実行できます',
+    description:
+      '有給・欠勤・遅刻早退などの申請を受け付け、承認／差戻し／却下を管理します。' +
+      '承認操作は「承認者」に指定された本人（またはアプリ管理権限を持つ人）に限定され、レコードは所属部署内にだけ公開されます。',
+    // 上長が承認するには対象レコードを閲覧・更新できる必要があるため org。
+    recordViewScope: 'org',
+    recordEditScope: 'org',
     fields: [
       { fieldCode: 'applicant', fieldType: 'user_select', label: '申請者' },
+      { fieldCode: 'approver', fieldType: 'user_select', label: '承認者' },
       { fieldCode: 'leave_type', fieldType: 'select', label: '種別', required: true, settings: { options: ['有給休暇', '欠勤', '遅刻', '早退', '特別休暇'] } },
       { fieldCode: 'start_date', fieldType: 'date', label: '開始日', required: true },
       { fieldCode: 'end_date', fieldType: 'date', label: '終了日' },
       { fieldCode: 'days', fieldType: 'number', label: '日数', settings: { unit: '日' } },
       { fieldCode: 'reason', fieldType: 'textarea', label: '理由' },
-      { fieldCode: 'status', fieldType: 'status', label: '承認ステータス', required: true, settings: { options: ['申請中', '承認', '却下'], defaultValue: '申請中' } },
+      { fieldCode: 'status', fieldType: 'status', label: '承認ステータス', required: true, settings: { options: ['申請中', '承認', '差戻し', '却下'], defaultValue: '申請中' } },
     ],
     processConfig: {
       enabled: true,
       statusField: 'status',
-      statuses: ['申請中', '承認', '却下'],
+      statuses: ['申請中', '承認', '差戻し', '却下'],
       actions: [
-        { from: '申請中', to: '承認', label: '承認する' },
-        { from: '申請中', to: '却下', label: '却下する' },
+        { from: '申請中', to: '承認', label: '承認する', approver: 'approver' },
+        { from: '申請中', to: '差戻し', label: '差し戻す', approver: 'approver' },
+        { from: '申請中', to: '却下', label: '却下する', approver: 'approver' },
+        { from: '差戻し', to: '申請中', label: '再申請する' },
+      ],
+    },
+    views: [
+      { name: '承認待ち', columns: ['applicant', 'approver', 'leave_type', 'start_date', 'end_date', 'days'], conditions: [{ field: 'status', op: 'eq', value: '申請中' }], sort: { field: 'start_date', order: 'asc' } },
+      { name: '承認済み', columns: ['applicant', 'leave_type', 'start_date', 'end_date', 'days'], conditions: [{ field: 'status', op: 'eq', value: '承認' }], sort: { field: 'start_date', order: 'desc' } },
+    ],
+    dashboard: {
+      name: '勤怠ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '申請件数', kpiMode: 'count' },
+        { type: 'kpi', title: '承認待ち', kpiMode: 'open' },
+        { type: 'kpi', title: '取得日数 合計', kpiMode: 'sum', valueField: 'days' },
+        { type: 'chart', title: '種別別 件数', chartType: 'pie', groupField: 'leave_type', metric: 'count' },
+        { type: 'chart', title: 'ステータス別', chartType: 'bar', groupField: 'status', metric: 'count' },
+        { type: 'chart', title: '申請者別 日数', chartType: 'bar', groupField: 'applicant', metric: 'sum', valueField: 'days' },
       ],
     },
   },
@@ -690,6 +800,21 @@ export const APP_TEMPLATES: AppTemplate[] = [
         { from: '更新待ち', to: '終了', label: '終了する' },
       ],
     },
+    views: [
+      { name: '有効な契約', columns: ['contract_name', 'partner', 'contract_type', 'end_date', 'amount', 'owner'], conditions: [{ field: 'status', op: 'eq', value: '有効' }], sort: { field: 'end_date', order: 'asc' } },
+      { name: '更新待ち', columns: ['contract_name', 'partner', 'end_date', 'auto_renew', 'owner'], conditions: [{ field: 'status', op: 'eq', value: '更新待ち' }], sort: { field: 'end_date', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '契約ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '契約件数', kpiMode: 'count' },
+        { type: 'kpi', title: '有効', kpiMode: 'count', filters: [{ field: 'status', op: 'eq', value: '有効' }] },
+        { type: 'kpi', title: '契約金額 合計', kpiMode: 'sum', valueField: 'amount' },
+        { type: 'chart', title: '契約種別 金額', chartType: 'bar', groupField: 'contract_type', metric: 'sum', valueField: 'amount' },
+        { type: 'chart', title: 'ステータス別', chartType: 'pie', groupField: 'status', metric: 'count' },
+        { type: 'list', title: '満了が近い契約', columns: ['contract_name', 'partner', 'end_date', 'status'], limit: 8, sortField: 'end_date', sortDir: 'asc' },
+      ],
+    },
   },
   {
     id: 'minutes',
@@ -714,6 +839,19 @@ export const APP_TEMPLATES: AppTemplate[] = [
       },
       { fieldCode: 'note', fieldType: 'textarea', label: '備考' },
     ],
+    views: [
+      { name: '直近の議事録', columns: ['meeting_name', 'meeting_at', 'recorder', 'decisions'], conditions: [], sort: { field: 'meeting_at', order: 'desc' } },
+      { name: '会議名別', columns: ['meeting_name', 'meeting_at', 'recorder'], conditions: [], sort: { field: 'meeting_name', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '議事録ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '議事録件数', kpiMode: 'count' },
+        { type: 'chart', title: '会議名別 件数', chartType: 'bar', groupField: 'meeting_name', metric: 'count' },
+        { type: 'chart', title: '記録者別 件数', chartType: 'pie', groupField: 'recorder', metric: 'count' },
+        { type: 'list', title: '最近の会議', columns: ['meeting_name', 'meeting_at', 'recorder'], limit: 8, sortField: 'meeting_at', sortDir: 'desc' },
+      ],
+    },
   },
   {
     id: 'contacts',
@@ -733,6 +871,19 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { fieldCode: 'category', fieldType: 'select', label: '区分', settings: { options: ['取引先', '見込み', 'パートナー', 'その他'] } },
       { fieldCode: 'note', fieldType: 'textarea', label: '備考' },
     ],
+    views: [
+      { name: '取引先', columns: ['name', 'company', 'title', 'email', 'phone'], conditions: [{ field: 'category', op: 'eq', value: '取引先' }], sort: { field: 'company', order: 'asc' } },
+      { name: '区分別', columns: ['name', 'company', 'category', 'email', 'phone'], conditions: [], sort: { field: 'category', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '連絡先ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '登録件数', kpiMode: 'count' },
+        { type: 'chart', title: '区分別 件数', chartType: 'pie', groupField: 'category', metric: 'count' },
+        { type: 'chart', title: '会社別 件数', chartType: 'bar', groupField: 'company', metric: 'count' },
+        { type: 'list', title: '最近登録した連絡先', columns: ['name', 'company', 'category', 'email'], limit: 8 },
+      ],
+    },
   },
   {
     id: 'doc_mgmt',
@@ -748,19 +899,25 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { fieldCode: 'doc_date', fieldType: 'date', label: '収受／起案日' },
       { fieldCode: 'department', fieldType: 'text', label: '主管課' },
       { fieldCode: 'drafter', fieldType: 'user_select', label: '起案者' },
+      { fieldCode: 'reviewer', fieldType: 'user_select', label: '確認者（課長）' },
+      { fieldCode: 'approver', fieldType: 'user_select', label: '決裁者' },
       { fieldCode: 'content', fieldType: 'textarea', label: '概要' },
       { fieldCode: 'file', fieldType: 'file', label: '文書ファイル' },
       { fieldCode: 'retention', fieldType: 'select', label: '保存年限', settings: { options: ['1年', '3年', '5年', '10年', '30年', '永年'] } },
-      { fieldCode: 'status', fieldType: 'status', label: '決裁状況', required: true, settings: { options: ['起案', '課長確認', '決裁待ち', '決裁済', '施行', '完結'], defaultValue: '起案' } },
+      { fieldCode: 'status', fieldType: 'status', label: '決裁状況', required: true, settings: { options: ['起案', '課長確認', '決裁待ち', '決裁済', '施行', '完結', '差戻し'], defaultValue: '起案' } },
     ],
+    // 決裁の各段はそれぞれの担当者本人だけが進められる。差戻しは起案へ戻して直せるようにする。
     processConfig: {
       enabled: true,
       statusField: 'status',
-      statuses: ['起案', '課長確認', '決裁待ち', '決裁済', '施行', '完結'],
+      statuses: ['起案', '課長確認', '決裁待ち', '決裁済', '施行', '完結', '差戻し'],
       actions: [
         { from: '起案', to: '課長確認', label: '課長へ回す' },
-        { from: '課長確認', to: '決裁待ち', label: '決裁へ上げる' },
-        { from: '決裁待ち', to: '決裁済', label: '決裁する' },
+        { from: '課長確認', to: '決裁待ち', label: '決裁へ上げる', approver: 'reviewer' },
+        { from: '課長確認', to: '差戻し', label: '起案者へ差し戻す', approver: 'reviewer' },
+        { from: '決裁待ち', to: '決裁済', label: '決裁する', approver: 'approver' },
+        { from: '決裁待ち', to: '差戻し', label: '差し戻す', approver: 'approver' },
+        { from: '差戻し', to: '起案', label: '起案し直す' },
         { from: '決裁済', to: '施行', label: '施行する' },
         { from: '施行', to: '完結', label: '完結にする' },
       ],
@@ -771,7 +928,7 @@ export const APP_TEMPLATES: AppTemplate[] = [
           id: 'ringi', name: '回議書', paper: 'A4', orientation: 'portrait',
           title: '回 議 書', subtitle: '文書番号: {doc_no}', showDate: true,
           blocks: [
-            { type: 'fields', columns: 2, fieldCodes: ['subject', 'doc_type', 'doc_date', 'department', 'drafter', 'retention', 'status'] },
+            { type: 'fields', columns: 2, fieldCodes: ['subject', 'doc_type', 'doc_date', 'department', 'drafter', 'reviewer', 'approver', 'retention', 'status'] },
             { type: 'heading', content: '概要' },
             { type: 'text', content: '{content}' },
           ],
@@ -799,7 +956,12 @@ export const APP_TEMPLATES: AppTemplate[] = [
     category: '官公庁',
     icon: 'FileSearch',
     summary: '開示請求の受付・期限・開示区分・通知までを管理',
-    description: '情報公開（開示）請求を受付番号で管理し、決定期限・開示区分・通知状況を追跡します。',
+    description:
+      '情報公開（開示）請求を受付番号で管理し、決定期限・開示区分・通知状況を追跡します。' +
+      '請求者の情報を含むため、レコードは担当課の所属部署内にだけ公開されます。',
+    // 請求者が誰かは請求内容と結び付く情報。担当課内に限定する。
+    recordViewScope: 'org',
+    recordEditScope: 'org',
     fields: [
       { fieldCode: 'req_no', fieldType: 'auto_number', label: '請求番号', settings: { prefix: '開示-', padding: 4 } },
       { fieldCode: 'requester', fieldType: 'text', label: '請求者' },
@@ -851,17 +1013,20 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { fieldCode: 'received_date', fieldType: 'date', label: '受付日' },
       { fieldCode: 'reviewer', fieldType: 'user_select', label: '審査担当' },
       { fieldCode: 'amount_granted', fieldType: 'number', label: '交付決定額', settings: { unit: '円', thousandSeparator: true } },
-      { fieldCode: 'status', fieldType: 'status', label: '審査状況', required: true, settings: { options: ['受付', '審査中', '交付決定', '不交付'], defaultValue: '受付' } },
+      { fieldCode: 'status', fieldType: 'status', label: '審査状況', required: true, settings: { options: ['受付', '審査中', '補正依頼', '交付決定', '不交付'], defaultValue: '受付' } },
       { fieldCode: 'note', fieldType: 'textarea', label: '備考' },
     ],
+    // 交付決定・不交付は審査担当本人だけが確定できる。補正依頼で審査中へ戻せる。
     processConfig: {
       enabled: true,
       statusField: 'status',
-      statuses: ['受付', '審査中', '交付決定', '不交付'],
+      statuses: ['受付', '審査中', '補正依頼', '交付決定', '不交付'],
       actions: [
         { from: '受付', to: '審査中', label: '審査を開始' },
-        { from: '審査中', to: '交付決定', label: '交付決定' },
-        { from: '審査中', to: '不交付', label: '不交付' },
+        { from: '審査中', to: '補正依頼', label: '補正を求める', approver: 'reviewer' },
+        { from: '補正依頼', to: '審査中', label: '審査を再開' },
+        { from: '審査中', to: '交付決定', label: '交付決定', approver: 'reviewer' },
+        { from: '審査中', to: '不交付', label: '不交付', approver: 'reviewer' },
       ],
     },
     views: [
@@ -929,7 +1094,7 @@ export const APP_TEMPLATES: AppTemplate[] = [
         ] },
       },
       { fieldCode: 'personnel', fieldType: 'number', label: '派遣人員', settings: { unit: '名' } },
-      { fieldCode: 'budget', fieldType: 'number', label: '概算経費（税抜）', settings: { unit: '円', thousandSeparator: true } },
+      { fieldCode: 'budget', fieldType: 'calc', label: '概算経費（税抜）', settings: { formula: 'sum(resources.amount)', unit: '円', thousandSeparator: true } },
       { fieldCode: 'tax_rate', fieldType: 'number', label: '消費税率', settings: { unit: '%', defaultValue: 10 } },
       { fieldCode: 'total', fieldType: 'calc', label: '税込合計', settings: { formula: 'budget + budget * tax_rate / 100', unit: '円', thousandSeparator: true } },
       { fieldCode: 'readiness', fieldType: 'number', label: '準備完了率', settings: { unit: '%' } },
@@ -1039,6 +1204,20 @@ export const APP_TEMPLATES: AppTemplate[] = [
       statuses: ['勤務中', '引継完了'],
       actions: [{ from: '勤務中', to: '引継完了', label: '引継完了にする' }],
     },
+    views: [
+      { name: '勤務中', columns: ['duty_date', 'duty_type', 'person', 'status'], conditions: [{ field: 'status', op: 'eq', value: '勤務中' }], sort: { field: 'duty_date', order: 'asc' } },
+      { name: '異常報告あり', columns: ['duty_date', 'duty_type', 'person', 'abnormal'], conditions: [{ field: 'abnormal', op: 'notempty' }], sort: { field: 'duty_date', order: 'desc' } },
+    ],
+    dashboard: {
+      name: '当直ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '勤務件数', kpiMode: 'count' },
+        { type: 'kpi', title: '引継未完了', kpiMode: 'count', filters: [{ field: 'status', op: 'eq', value: '勤務中' }] },
+        { type: 'chart', title: '勤務種別 件数', chartType: 'pie', groupField: 'duty_type', metric: 'count' },
+        { type: 'chart', title: '担当者別 件数', chartType: 'bar', groupField: 'person', metric: 'count' },
+        { type: 'list', title: '直近の勤務', columns: ['duty_date', 'duty_type', 'person', 'status'], limit: 8, sortField: 'duty_date', sortDir: 'desc' },
+      ],
+    },
   },
   {
     id: 'safety',
@@ -1046,7 +1225,12 @@ export const APP_TEMPLATES: AppTemplate[] = [
     category: '自衛隊・防衛',
     icon: 'ShieldAlert',
     summary: 'ヒヤリハット・事故の報告と対策の進捗を管理',
-    description: 'ヒヤリハットや事故・故障を報告番号で管理し、調査→対策→完了まで安全管理します。',
+    description:
+      'ヒヤリハットや事故・故障を報告番号で管理し、調査→対策→完了まで安全管理します。' +
+      '再発防止のため閲覧は全社、更新は所属部署内に限定してあります。',
+    // 事例は全員が学べるよう閲覧は all のまま。ただし他部署が報告内容を書き換えられないよう編集は org。
+    recordViewScope: 'all',
+    recordEditScope: 'org',
     fields: [
       { fieldCode: 'report_no', fieldType: 'auto_number', label: '報告番号', settings: { prefix: '安-', padding: 4 } },
       { fieldCode: 'occurred_date', fieldType: 'date', label: '発生日', required: true },
@@ -1066,6 +1250,21 @@ export const APP_TEMPLATES: AppTemplate[] = [
         { from: '報告', to: '調査中', label: '調査を開始' },
         { from: '調査中', to: '対策実施', label: '対策を実施' },
         { from: '対策実施', to: '完了', label: '完了にする' },
+      ],
+    },
+    views: [
+      { name: '未完了', columns: ['report_no', 'occurred_date', 'place', 'category', 'severity', 'status'], conditions: [{ field: 'status', op: 'ne', value: '完了' }], sort: { field: 'occurred_date', order: 'desc' } },
+      { name: '重大度: 高', columns: ['report_no', 'occurred_date', 'place', 'content', 'status'], conditions: [{ field: 'severity', op: 'eq', value: '高' }], sort: { field: 'occurred_date', order: 'desc' } },
+    ],
+    dashboard: {
+      name: '安全ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '報告件数', kpiMode: 'count' },
+        { type: 'kpi', title: '未完了', kpiMode: 'count', filters: [{ field: 'status', op: 'ne', value: '完了' }] },
+        { type: 'kpi', title: '完了率', kpiMode: 'rate' },
+        { type: 'chart', title: '区分別 件数', chartType: 'pie', groupField: 'category', metric: 'count' },
+        { type: 'chart', title: '重大度別 件数', chartType: 'bar', groupField: 'severity', metric: 'count' },
+        { type: 'chart', title: '発生場所別 件数', chartType: 'bar', groupField: 'place', metric: 'count' },
       ],
     },
   },
@@ -1092,6 +1291,21 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { from: '加工中', to: '検査', label: '検査へ' },
       { from: '検査', to: '完成', label: '完成にする' },
     ] },
+    views: [
+      { name: '進行中', columns: ['order_no', 'product', 'qty', 'done_qty', 'line', 'due_date', 'status'], conditions: [{ field: 'status', op: 'ne', value: '完成' }], sort: { field: 'due_date', order: 'asc' } },
+      { name: 'ライン別', columns: ['order_no', 'product', 'qty', 'line', 'assignee', 'status'], conditions: [], sort: { field: 'line', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '生産ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '指示件数', kpiMode: 'count' },
+        { type: 'kpi', title: '未完成', kpiMode: 'count', filters: [{ field: 'status', op: 'ne', value: '完成' }] },
+        { type: 'kpi', title: '実績数量 合計', kpiMode: 'sum', valueField: 'done_qty' },
+        { type: 'chart', title: 'ライン別 指示数量', chartType: 'bar', groupField: 'line', metric: 'sum', valueField: 'qty' },
+        { type: 'chart', title: 'ステータス別', chartType: 'pie', groupField: 'status', metric: 'count' },
+        { type: 'list', title: '納期が近い指示', columns: ['order_no', 'product', 'due_date', 'status'], limit: 8, sortField: 'due_date', sortDir: 'asc' },
+      ],
+    },
   },
   {
     id: 'quality',
@@ -1116,6 +1330,21 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { from: '原因調査', to: '是正処置', label: '是正する' },
       { from: '是正処置', to: '完了', label: '完了にする' },
     ] },
+    views: [
+      { name: '未完了', columns: ['report_no', 'occurred_date', 'product', 'qty', 'assignee', 'status'], conditions: [{ field: 'status', op: 'ne', value: '完了' }], sort: { field: 'occurred_date', order: 'desc' } },
+      { name: '製品別', columns: ['report_no', 'product', 'defect_content', 'qty', 'status'], conditions: [], sort: { field: 'product', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '品質ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '不良報告件数', kpiMode: 'count' },
+        { type: 'kpi', title: '未完了', kpiMode: 'count', filters: [{ field: 'status', op: 'ne', value: '完了' }] },
+        { type: 'kpi', title: '不良数量 合計', kpiMode: 'sum', valueField: 'qty' },
+        { type: 'chart', title: '製品別 不良数量', chartType: 'bar', groupField: 'product', metric: 'sum', valueField: 'qty' },
+        { type: 'chart', title: 'ステータス別', chartType: 'pie', groupField: 'status', metric: 'count' },
+        { type: 'chart', title: '担当者別 件数', chartType: 'bar', groupField: 'assignee', metric: 'count' },
+      ],
+    },
   },
   {
     id: 'sales_daily',
@@ -1142,6 +1371,10 @@ export const APP_TEMPLATES: AppTemplate[] = [
         { type: 'chart', title: '日別 売上', chartType: 'line', groupField: 'report_date', metric: 'sum', valueField: 'sales' },
       ],
     },
+    views: [
+      { name: '直近の日報', columns: ['report_date', 'store', 'sales', 'customers', 'avg_spend', 'staff'], conditions: [], sort: { field: 'report_date', order: 'desc' } },
+      { name: '店舗別', columns: ['store', 'report_date', 'sales', 'customers', 'avg_spend'], conditions: [], sort: { field: 'store', order: 'asc' } },
+    ],
   },
   {
     id: 'incident_med',
@@ -1149,7 +1382,12 @@ export const APP_TEMPLATES: AppTemplate[] = [
     category: '医療・介護',
     icon: 'ShieldAlert',
     summary: 'ヒヤリハット・アクシデントを報告〜対策で管理',
-    description: '医療安全のインシデントを影響度付きで報告し、分析→対策→完了まで管理します。',
+    description:
+      '医療安全のインシデントを影響度付きで報告し、分析→対策→完了まで管理します。' +
+      '患者・職員に関わる内容を含むため、レコードは所属部署内にだけ公開されます。',
+    // 患者安全に関わる報告を全社公開にしない。所属部署内で共有・是正する。
+    recordViewScope: 'org',
+    recordEditScope: 'org',
     fields: [
       { fieldCode: 'report_no', fieldType: 'auto_number', label: '報告番号', settings: { prefix: '医安-', padding: 4 } },
       { fieldCode: 'occurred_at', fieldType: 'datetime', label: '発生日時', required: true },
@@ -1202,6 +1440,21 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { from: '申込', to: 'キャンセル', label: 'キャンセル' },
       { from: '受付', to: 'キャンセル', label: 'キャンセル' },
     ] },
+    views: [
+      { name: '受講中', columns: ['entry_no', 'name', 'course_name', 'apply_date', 'staff', 'status'], conditions: [{ field: 'status', op: 'eq', value: '受講中' }], sort: { field: 'apply_date', order: 'asc' } },
+      { name: 'コース別', columns: ['entry_no', 'name', 'course_name', 'status'], conditions: [], sort: { field: 'course_name', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '受講ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '申込件数', kpiMode: 'count' },
+        { type: 'kpi', title: '修了', kpiMode: 'count', filters: [{ field: 'status', op: 'eq', value: '修了' }] },
+        { type: 'kpi', title: 'キャンセル', kpiMode: 'count', filters: [{ field: 'status', op: 'eq', value: 'キャンセル' }] },
+        { type: 'chart', title: 'コース別 申込数', chartType: 'bar', groupField: 'course_name', metric: 'count' },
+        { type: 'chart', title: 'ステータス別', chartType: 'pie', groupField: 'status', metric: 'count' },
+        { type: 'list', title: '最近の申込', columns: ['entry_no', 'name', 'course_name', 'apply_date'], limit: 8, sortField: 'apply_date', sortDir: 'desc' },
+      ],
+    },
   },
   {
     id: 'site',
@@ -1225,6 +1478,8 @@ export const APP_TEMPLATES: AppTemplate[] = [
     processConfig: { enabled: true, statusField: 'status', statuses: ['着工前', '施工中', '検査', '竣工'], actions: [
       { from: '着工前', to: '施工中', label: '着工する' },
       { from: '施工中', to: '検査', label: '検査へ' },
+      // 検査で是正が出たら施工へ戻す。片道だと手直しのたびに新規レコードが要る。
+      { from: '検査', to: '施工中', label: '是正で施工へ戻す' },
       { from: '検査', to: '竣工', label: '竣工する' },
     ] },
     views: [
@@ -1261,7 +1516,11 @@ export const APP_TEMPLATES: AppTemplate[] = [
     processConfig: { enabled: true, statusField: 'status', statuses: ['募集中', '申込', '成約', '取下げ'], actions: [
       { from: '募集中', to: '申込', label: '申込受付' },
       { from: '申込', to: '成約', label: '成約にする' },
+      // 申込がキャンセルになったら募集へ戻す。片道だと物件を登録し直すことになる。
+      { from: '申込', to: '募集中', label: '申込キャンセル' },
       { from: '募集中', to: '取下げ', label: '取下げ' },
+      { from: '申込', to: '取下げ', label: '取下げ' },
+      { from: '取下げ', to: '募集中', label: '募集を再開' },
     ] },
     views: [
       { name: '募集中', columns: ['prop_no', 'prop_name', 'address', 'prop_type', 'price', 'agent', 'status'], conditions: [{ field: 'status', op: 'eq', value: '募集中' }], sort: { field: 'price', order: 'asc' } },
@@ -1290,6 +1549,7 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { fieldCode: 'impact', fieldType: 'select', label: '影響度', settings: { options: ['軽微', '中', '重大', '全面停止'] } },
       { fieldCode: 'content', fieldType: 'textarea', label: '事象', required: true },
       { fieldCode: 'action', fieldType: 'textarea', label: '対応内容' },
+      { fieldCode: 'recovered_at', fieldType: 'datetime', label: '復旧日時' },
       { fieldCode: 'assignee', fieldType: 'user_select', label: '担当' },
       { fieldCode: 'status', fieldType: 'status', label: '対応状況', required: true, settings: { options: ['検知', '調査', '復旧', '再発防止', '完了'], defaultValue: '検知' } },
     ],
@@ -1301,6 +1561,7 @@ export const APP_TEMPLATES: AppTemplate[] = [
     ] },
     views: [
       { name: '対応中', columns: ['inc_no', 'detected_at', 'system', 'impact', 'assignee', 'status'], conditions: [{ field: 'status', op: 'ne', value: '完了' }], sort: { field: 'detected_at', order: 'desc' } },
+      { name: '未復旧', columns: ['inc_no', 'detected_at', 'system', 'impact', 'recovered_at', 'assignee'], conditions: [{ field: 'recovered_at', op: 'empty' }], sort: { field: 'detected_at', order: 'asc' } },
       { name: '重大・全面停止', columns: ['inc_no', 'system', 'impact', 'assignee', 'status'], conditions: [{ field: 'impact', op: 'eq', value: '全面停止' }], sort: { field: 'detected_at', order: 'desc' } },
     ],
     dashboard: {
@@ -1374,6 +1635,20 @@ export const APP_TEMPLATES: AppTemplate[] = [
       { from: '改定', to: '廃止', label: '廃止する' },
       { from: '制定', to: '廃止', label: '廃止する' },
     ] },
+    views: [
+      { name: '有効な規程', columns: ['reg_no', 'reg_name', 'reg_type', 'revised_date', 'owner', 'status'], conditions: [{ field: 'status', op: 'ne', value: '廃止' }], sort: { field: 'reg_type', order: 'asc' } },
+      { name: '種別別', columns: ['reg_no', 'reg_name', 'reg_type', 'enacted_date', 'revised_date'], conditions: [], sort: { field: 'reg_type', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '規程ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '文書件数', kpiMode: 'count' },
+        { type: 'kpi', title: '廃止済み', kpiMode: 'count', filters: [{ field: 'status', op: 'eq', value: '廃止' }] },
+        { type: 'chart', title: '種別別 件数', chartType: 'pie', groupField: 'reg_type', metric: 'count' },
+        { type: 'chart', title: '所管者別 件数', chartType: 'bar', groupField: 'owner', metric: 'count' },
+        { type: 'list', title: '最近改定された文書', columns: ['reg_no', 'reg_name', 'revised_date', 'status'], limit: 8, sortField: 'revised_date', sortDir: 'desc' },
+      ],
+    },
   },
   {
     id: 'fitness',
@@ -1381,7 +1656,10 @@ export const APP_TEMPLATES: AppTemplate[] = [
     category: '自衛隊・防衛',
     icon: 'Dumbbell',
     summary: '種目記録から得点・級・総合判定を性別×年齢区分でルール表自動採点',
-    description: '体力検定を受検番号で管理。種目の記録を入れると、得点・合計・級・総合判定を「ルール表（条件分岐）」で自動採点します。3,000m走は年齢区分別、握力は性別別の基準。基準値はアプリ設定のルール表で自由に変更できます。',
+    description: '体力検定を受検番号で管理。種目の記録を入れると、得点・合計・級・総合判定を「ルール表（条件分岐）」で自動採点します。3,000m走は年齢区分別、握力は性別別の基準。基準値はアプリ設定のルール表で自由に変更できます。レコードは所属部隊（部署）内にだけ公開されます。',
+    // 身体測定値は個人情報。全社公開にせず所属部署内に限定する。
+    recordViewScope: 'org',
+    recordEditScope: 'org',
     fields: [
       { fieldCode: 'test_no', fieldType: 'auto_number', label: '受検番号', settings: { prefix: '体-', padding: 4 } },
       { fieldCode: 'person', fieldType: 'user_select', label: '受検者', required: true },
@@ -1457,6 +1735,21 @@ export const APP_TEMPLATES: AppTemplate[] = [
         { from: '予定', to: '受検済', label: '受検完了' },
         { from: '受検済', to: '再検査', label: '再検査にする' },
         { from: '再検査', to: '受検済', label: '再検査完了' },
+      ],
+    },
+    views: [
+      { name: '受検済み', columns: ['test_no', 'person', 'test_date', 'total_points', 'grade', 'overall'], conditions: [{ field: 'status', op: 'eq', value: '受検済' }], sort: { field: 'test_date', order: 'desc' } },
+      { name: '再検査・未受検', columns: ['test_no', 'person', 'test_date', 'status', 'note'], conditions: [{ field: 'status', op: 'ne', value: '受検済' }], sort: { field: 'test_date', order: 'asc' } },
+    ],
+    dashboard: {
+      name: '体力検定ダッシュボード',
+      widgets: [
+        { type: 'kpi', title: '受検者数', kpiMode: 'count' },
+        { type: 'kpi', title: '平均得点', kpiMode: 'avg', valueField: 'total_points' },
+        { type: 'kpi', title: '未受検・再検査', kpiMode: 'count', filters: [{ field: 'status', op: 'ne', value: '受検済' }] },
+        { type: 'chart', title: '級別 人数', chartType: 'bar', groupField: 'grade', metric: 'count' },
+        { type: 'chart', title: '総合判定', chartType: 'pie', groupField: 'overall', metric: 'count' },
+        { type: 'chart', title: '性別 平均得点', chartType: 'bar', groupField: 'gender', metric: 'avg', valueField: 'total_points' },
       ],
     },
   },
