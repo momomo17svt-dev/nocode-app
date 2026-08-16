@@ -26,6 +26,32 @@ describe('client calculation helpers', () => {
     expect(evalRules(settings, { score: 40 })).toBe('C');
   });
 
+  it('aggregates subtable columns with sum / avg / count', () => {
+    const rec = {
+      items: [
+        { qty: 2, unit_price: 1000, amount: 2000 },
+        { qty: 3, unit_price: 500, amount: 1500 },
+        { qty: 1, unit_price: '', amount: '' },
+      ],
+      tax_rate: 10,
+    };
+    expect(evalFormula('sum(items.amount)', rec)).toBe(3500);
+    expect(evalFormula('count(items)', rec)).toBe(3);
+    expect(evalFormula('avg(items.amount)', rec)).toBe(1750);
+    expect(evalFormula('sum(items.amount) + floor(sum(items.amount) * tax_rate / 100)', rec)).toBe(3850);
+    expect(evalFormula('sum(missing.amount)', rec)).toBe(0);
+    expect(evalFormula('1.5 * 2', rec)).toBe(3);
+  });
+
+  it('compares two fields via valueField in rule tables', () => {
+    const settings = {
+      fallback: '適正',
+      rules: [{ when: [{ field: 'stock', op: '<', valueField: 'reorder' }], result: '発注要' }],
+    };
+    expect(evalRules(settings, { stock: 5, reorder: 10 })).toBe('発注要');
+    expect(evalRules(settings, { stock: 20, reorder: 10 })).toBe('適正');
+  });
+
   it('computes dependent calculated fields in field order', () => {
     const fields = [
       { fieldCode: 'subtotal', fieldType: 'number' },

@@ -4,6 +4,7 @@
  *   - 数値・フィールドコード参照・( ) ・四則演算 + - * / ・単項マイナス
  *   - 比較演算 > < >= <= == != （真=1 / 偽=0）
  *   - 関数 if(条件, 真の値, 偽の値) / min / max / abs / round / floor / ceil
+ *   - 明細（サブテーブル）の集計 sum(明細.列) / avg(明細.列) / count(明細)
  * eval不使用。バックエンド compute.util と同じ挙動。
  */
 export function evalFormula(formula: string, values: Record<string, any>): number | string {
@@ -34,6 +35,12 @@ function tokenize(s: string): Tok[] {
     } else if (/[A-Za-z_]/.test(c)) {
       let id = '';
       while (i < s.length && /[A-Za-z0-9_]/.test(s[i])) id += s[i++];
+      // 明細参照 items.amount を1つの識別子として扱う。
+      // ドットの直後が識別子のときだけ連結し、小数点(.5)とは衝突させない。
+      if (s[i] === '.' && /[A-Za-z_]/.test(s[i + 1] || '')) {
+        id += s[i++];
+        while (i < s.length && /[A-Za-z0-9_]/.test(s[i])) id += s[i++];
+      }
       toks.push({ t: 'id', v: id });
     } else if ('+-*/'.includes(c)) {
       toks.push({ t: 'op', v: c });
@@ -107,7 +114,8 @@ class Parser {
     if (tok.t === 'id') {
       this.next();
       if (!this.atEnd() && this.peek().t === 'paren' && this.peek().v === '(') {
-        return this.parseCall(tok.v);
+        const name = tok.v.toLowerCase();
+        return AGGREGATES.has(name) ? this.parseAggregate(name) : this.parseCall(name);
       }
       return Number(this.vals[tok.v] ?? 0) || 0;
     }
@@ -133,6 +141,44 @@ class Parser {
     if (this.atEnd() || this.next().v !== ')') throw new Error('関数の括弧が閉じていない');
     return applyFunc(name, args);
   }
+
+  /**
+   * 集計関数は引数を数値へ評価せず、明細参照(items.amount)のまま受け取る。
+   * 通常の引数評価に通すと配列が 0 になり、合計が常に 0 になってしまうため。
+   */
+  private parseAggregate(name: string): number {
+    this.next(); // consume '('
+    const arg = this.peek();
+    if (!arg || arg.t !== 'id') throw new Error('集計関数の引数は明細の項目参照');
+    this.next();
+    if (this.atEnd() || this.next().v !== ')') throw new Error('関数の括弧が閉じていない');
+    return aggregate(name, arg.v, this.vals);
+  }
+}
+
+const AGGREGATES = new Set(['sum', 'avg', 'count']);
+
+/**
+ * 明細（サブテーブル）の列を集計する。
+ *   sum(items.amount) 合計 / avg(items.amount) 平均 / count(items) 行数
+ * 数値でない値は無視する。行が無い場合は 0。
+ */
+function aggregate(name: string, ref: string, values: Record<string, any>): number {
+  const dot = ref.indexOf('.');
+  const table = dot < 0 ? ref : ref.slice(0, dot);
+  const column = dot < 0 ? '' : ref.slice(dot + 1);
+  const rows = values[table];
+  if (!Array.isArray(rows)) return 0;
+  if (name === 'count') return rows.length;
+  if (!column) throw new Error('集計する列を指定してください');
+  // 未入力セルは母数から外す。Number('') は 0 なので、除外しないと平均が下振れする。
+  const nums = rows
+    .map((r) => r?.[column])
+    .filter((v) => v !== null && v !== undefined && v !== '')
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n));
+  const total = nums.reduce((a, b) => a + b, 0);
+  return name === 'avg' ? (nums.length ? total / nums.length : 0) : total;
 }
 
 function compare(l: number, op: string, r: number): boolean {
@@ -163,16 +209,27 @@ function applyFunc(name: string, args: number[]): number {
 /**
  * ルール表（条件分岐）の評価。バックエンド compute.util の evalRules と同一挙動。
  * settings = { mode:'rules', rules:[{ when:[{field,op,value,value2}], result }], fallback }
+ * value の代わりに valueField を指定すると、右辺に別項目の現在値を使う。
  */
 export function evalRules(settings: any, values: Record<string, any>): number | string {
   const rules: any[] = settings?.rules || [];
   for (const rule of rules) {
     const conds: any[] = rule?.when || [];
-    if (conds.every((c) => matchRuleCond(values[c.field], c.op, c.value, c.value2))) {
+    if (conds.every((c) => matchRuleCond(values[c.field], c.op, operand(c, 'value', values), operand(c, 'value2', values)))) {
       return coerceResult(rule.result);
     }
   }
   return coerceResult(settings?.fallback ?? '');
+}
+
+/**
+ * 比較の右辺を解決する。valueField / value2Field があればその項目の現在値を使い、
+ * 無ければ固定値を使う。項目コードを value に直接書くと文字列として比較され、
+ * 数値比較では 0 扱いになって静かに誤判定するため、参照は別キーで明示させる。
+ */
+function operand(cond: any, key: 'value' | 'value2', values: Record<string, any>): any {
+  const ref = key === 'value' ? cond.valueField : cond.value2Field;
+  return typeof ref === 'string' && ref ? values[ref] : cond[key];
 }
 
 const numOf = (v: any): number => { const n = Number(v); return isNaN(n) ? 0 : n; };

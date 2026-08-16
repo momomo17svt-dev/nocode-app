@@ -1,8 +1,16 @@
 /**
+ * ユーザー選択項目に入れるプレースホルダ。アプリを作成した本人のIDへ差し替えられる。
+ * 実ユーザーのIDはテンプレート定義時には決まらないため、必須のユーザー選択項目は
+ * これを入れておかないと「必須が空のサンプル」ができてしまう。
+ */
+export const SAMPLE_CREATOR = '__creator__';
+
+/**
  * テンプレートごとのサンプル（テスト）データ。
  * createFromTemplate(withSamples=true) 時に投入される。
- * 注意: user_select / file / auto_number / 計算フィールドは省略（自動付与・自動計算されるため）。
- * subtable の行は行内calc(amount等)を含めて記述する（サーバは行内calcを再計算しないため）。
+ * 注意: file / auto_number / 計算フィールドは省略（自動付与・自動計算されるため）。
+ * 必須のユーザー選択項目には SAMPLE_CREATOR を入れる。
+ * subtable の行内calcは記述しなくてもサーバ側で再計算される（書いてあっても上書きされる）。
  */
 export const SAMPLE_DATA: Record<string, Record<string, any>[]> = {
   jsdf_ops: [
@@ -257,12 +265,12 @@ export const SAMPLE_DATA: Record<string, Record<string, any>[]> = {
     { subject: '操作方法の問い合わせ', content: '管理画面でCSV出力する方法が分かりません。', customer_name: '鈴木物産', contact: '06-2222-3333', priority: '低', status: '完了', received_date: '2026-06-10', response_note: '手順書を案内し解決。' },
   ],
   survey: [
-    { theme: '在宅勤務制度アンケート', answer_status: '回答済', answer: '週2回の出社が理想です。', answered_date: '2026-06-14', due_date: '2026-06-22', note: '' },
-    { theme: '在宅勤務制度アンケート', answer_status: '回答済', answer: 'フルリモートを希望します。', answered_date: '2026-06-15', due_date: '2026-06-22' },
-    { theme: '在宅勤務制度アンケート', answer_status: '未回答', due_date: '2026-06-22', note: '未回答者へ再通知' },
-    { theme: '社内システム満足度調査', answer_status: '回答済', answer: '概ね満足。検索が遅い点を改善希望。', answered_date: '2026-06-12', due_date: '2026-06-20', note: '' },
-    { theme: '社内システム満足度調査', answer_status: '未回答', due_date: '2026-06-20', note: 'リマインド予定' },
-    { theme: '社内システム満足度調査', answer_status: '未回答', due_date: '2026-06-20' },
+    { target_user: SAMPLE_CREATOR, theme: '在宅勤務制度アンケート', answer_status: '回答済', answer: '週2回の出社が理想です。', answered_date: '2026-06-14', due_date: '2026-06-22', note: '' },
+    { target_user: SAMPLE_CREATOR, theme: '在宅勤務制度アンケート', answer_status: '回答済', answer: 'フルリモートを希望します。', answered_date: '2026-06-15', due_date: '2026-06-22' },
+    { target_user: SAMPLE_CREATOR, theme: '在宅勤務制度アンケート', answer_status: '未回答', due_date: '2026-06-22', note: '未回答者へ再通知' },
+    { target_user: SAMPLE_CREATOR, theme: '社内システム満足度調査', answer_status: '回答済', answer: '概ね満足。検索が遅い点を改善希望。', answered_date: '2026-06-12', due_date: '2026-06-20', note: '' },
+    { target_user: SAMPLE_CREATOR, theme: '社内システム満足度調査', answer_status: '未回答', due_date: '2026-06-20', note: 'リマインド予定' },
+    { target_user: SAMPLE_CREATOR, theme: '社内システム満足度調査', answer_status: '未回答', due_date: '2026-06-20' },
   ],
   daily_report: [
     { report_date: '2026-06-21', work_content: '顧客訪問2件、見積作成', achievement: 'B社の追加受注が決定', issues: '', work_hours: 8, status: '提出済' },
@@ -505,12 +513,12 @@ export const SAMPLE_DATA: Record<string, Record<string, any>[]> = {
     { reg_name: '経費精算マニュアル', reg_type: 'マニュアル', enacted_date: '2021-04-01', revised_date: '2024-04-01', status: '改定' },
   ],
   fitness: [
-    { test_date: '2026-06-12', gender: '男', age: 23, pushups: 65, situps: 58, run_sec: 690, grip: 56, status: '受検済', note: '全種目高水準' },
-    { test_date: '2026-06-12', gender: '男', age: 28, pushups: 52, situps: 60, run_sec: 730, grip: 48, status: '受検済', note: '' },
-    { test_date: '2026-06-12', gender: '男', age: 35, pushups: 40, situps: 48, run_sec: 825, grip: 44, status: '受検済', note: '持久走やや低調' },
-    { test_date: '2026-06-13', gender: '女', age: 26, pushups: 30, situps: 45, run_sec: 880, grip: 31, status: '受検済', note: '' },
-    { test_date: '2026-06-13', gender: '女', age: 41, pushups: 22, situps: 35, run_sec: 950, grip: 26, status: '受検済', note: '体力錬成を継続' },
-    { test_date: '2026-06-26', gender: '女', age: 30, status: '予定', note: '次回検定対象' },
+    { person: SAMPLE_CREATOR, test_date: '2026-06-12', gender: '男', age: 23, pushups: 65, situps: 58, run_sec: 690, grip: 56, status: '受検済', note: '全種目高水準' },
+    { person: SAMPLE_CREATOR, test_date: '2026-06-12', gender: '男', age: 28, pushups: 52, situps: 60, run_sec: 730, grip: 48, status: '受検済', note: '' },
+    { person: SAMPLE_CREATOR, test_date: '2026-06-12', gender: '男', age: 35, pushups: 40, situps: 48, run_sec: 825, grip: 44, status: '受検済', note: '持久走やや低調' },
+    { person: SAMPLE_CREATOR, test_date: '2026-06-13', gender: '女', age: 26, pushups: 30, situps: 45, run_sec: 880, grip: 31, status: '受検済', note: '' },
+    { person: SAMPLE_CREATOR, test_date: '2026-06-13', gender: '女', age: 41, pushups: 22, situps: 35, run_sec: 950, grip: 26, status: '受検済', note: '体力錬成を継続' },
+    { person: SAMPLE_CREATOR, test_date: '2026-06-26', gender: '女', age: 30, status: '予定', note: '次回検定対象' },
   ],
   onsite_claim: [
     { site: { lat: 35.662, lng: 139.73, label: '港区南青山' }, content: '設置した機器が起動しない', received_date: '2026-06-19', priority: '高', status: '対応中', actions: [

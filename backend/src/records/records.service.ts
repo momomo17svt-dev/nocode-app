@@ -495,6 +495,26 @@ export class RecordsService implements OnModuleInit, OnModuleDestroy {
         result[f.fieldCode] = existingData[f.fieldCode];
       }
     }
+    // 明細（サブテーブル）の行内計算をサーバ側でも確定する。
+    // 画面は行内calcを埋めて送るが、API連携やインポート経由では欠けることがあり、
+    // そのままだと親の sum(明細.列) が 0 になって合計が狂う。計算列は常にここで上書きする。
+    for (const f of fields) {
+      if (f.fieldType !== 'subtable') continue;
+      const columns: any[] = (f.settings as any)?.columns || [];
+      const calcColumns = columns.filter((c) => c.fieldType === 'calc');
+      if (!calcColumns.length) continue;
+      const rows = result[f.fieldCode];
+      if (!Array.isArray(rows)) continue;
+      result[f.fieldCode] = rows.map((row) => {
+        const next = { ...(row || {}) };
+        for (const c of calcColumns) {
+          const s = c.settings || {};
+          next[c.fieldCode] = s.mode === 'rules' ? evalRules(s, next) : s.formula ? evalFormula(s.formula, next) : '';
+        }
+        return next;
+      });
+    }
+
     // 計算フィールド（常に再計算）。fields配列順に逐次評価するので依存は順序で表現する。
     for (const f of fields) {
       if (f.fieldType === 'calc') {
