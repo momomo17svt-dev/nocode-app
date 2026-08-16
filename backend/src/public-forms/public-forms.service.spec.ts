@@ -1,4 +1,4 @@
-import { HttpException } from '@nestjs/common';
+import { BadRequestException, HttpException } from '@nestjs/common';
 import { PublicFormsService } from './public-forms.service';
 
 describe('PublicFormsService', () => {
@@ -36,5 +36,15 @@ describe('PublicFormsService', () => {
     await service.submit('token', { title: 'first' }, '192.0.2.1');
     await service.submit('token', { title: 'second' }, '192.0.2.2');
     expect(records.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('必須項目が未入力の匿名投稿を拒否する', async () => {
+    await expect(service.submit('token', {}, '192.0.2.3')).rejects.toThrow(BadRequestException);
+    expect(records.create).not.toHaveBeenCalled();
+  });
+
+  it('フォームに無いキーは保存対象から除く', async () => {
+    await service.submit('token', { title: 'ok', secret: 'x' }, '192.0.2.4');
+    expect(records.create).toHaveBeenCalledWith('app1', { title: 'ok' }, expect.any(String));
   });
 });

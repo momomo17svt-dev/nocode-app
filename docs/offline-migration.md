@@ -7,7 +7,7 @@
 - Node.js 22のWindows x64インストーラ
 - PostgreSQL 16以降、またはライセンス確認済みのポータブル配布物
 - `npm ci`済みの`backend/node_modules`と`frontend/node_modules`を含む非公開オフライン配布物
-- AIを使う場合はLM Studio、チャットモデル、埋め込みモデル
+- AIをオフラインで使う場合はLM StudioまたはOllama、チャットモデル、埋め込みモデル
 - 必要な範囲だけ取得し、利用条件を確認した地図データ
 
 GitHubの公開ソースZIPには、依存物、PostgreSQLバイナリ、地図、DB、添付、秘密情報は含まれません。
@@ -32,7 +32,7 @@ GitHubの公開ソースZIPには、依存物、PostgreSQLバイナリ、地図�
 
 ## AI設定
 
-LM Studioのローカルサーバを起動し、管理画面から通常は`http://localhost:1234/v1`を指定します。チャット機能とAI検索では必要なモデルが異なる場合があります。
+LM StudioまたはOllamaのローカルサーバーを起動し、管理画面でプロバイダーを選びます。bat版の標準URLはLM Studioが`http://localhost:1234/v1`、Ollamaが`http://localhost:11434/v1`です。Docker版ではホスト名を`host.docker.internal`へ変更します。チャット機能とAI検索では必要なモデルが異なる場合があります。
 
 ## 注意事項
 

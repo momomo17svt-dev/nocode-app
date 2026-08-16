@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { validateUpload } from '../common/file-validation.util';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -23,12 +24,21 @@ export class AiController {
   // ===== 利用系（全ユーザー・権限は内部でアプリ単位に適用） =====
   @Post('search')
   search(@Body() dto: SearchDto, @CurrentUser() user: AuthUser) {
-    return this.ai.search(user.userId, user.role, dto.query, { k: dto.k, docId: dto.docId });
+    return this.ai.search(user.userId, user.role, dto.query, {
+      k: dto.k,
+      docId: dto.docId,
+      appId: dto.appId,
+      sourceMode: dto.sourceMode,
+    });
   }
 
   @Post('ask')
   ask(@Body() dto: AskDto, @CurrentUser() user: AuthUser) {
-    return this.ai.ask(user.userId, user.role, dto.question, dto.history as any, dto.docId);
+    return this.ai.ask(user.userId, user.role, dto.question, dto.history as any, {
+      docId: dto.docId,
+      appId: dto.appId,
+      sourceMode: dto.sourceMode,
+    });
   }
 
   /** RAGチャットのストリーミング応答（SSE）。Bearer認証のため EventSource ではなく fetch で消費する。 */
@@ -45,7 +55,11 @@ export class AiController {
         onSources: (sources) => send('sources', sources),
         onToken: (t) => send('token', t),
         onQueued: (info) => send('queued', info),
-      }, dto.docId);
+      }, {
+        docId: dto.docId,
+        appId: dto.appId,
+        sourceMode: dto.sourceMode,
+      });
       send('done', {});
     } catch (e: any) {
       send('error', e?.message || 'AI応答の生成に失敗しました');
@@ -107,9 +121,9 @@ export class AiController {
     @CurrentUser() user: AuthUser,
   ) {
     if (!file) throw new BadRequestException('画像が指定されていません');
-    if (!file.mimetype?.startsWith('image/')) throw new BadRequestException('画像ファイルを指定してください');
     if (!appId) throw new BadRequestException('appId が指定されていません');
-    const dataUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    const validated = validateUpload(file.buffer, file.originalname, file.mimetype, 'image');
+    const dataUrl = `data:${validated.mimeType};base64,${file.buffer.toString('base64')}`;
     return this.ai.draftRecordFromImage(user.userId, user.role, appId, dataUrl);
   }
 
@@ -234,15 +248,24 @@ export class AiController {
   uploadDoc(
     @UploadedFile() file: Express.Multer.File,
     @Query('appId') appId: string,
+    @Query('visibilityMode') visibilityMode: string,
+    @Query('groupIds') groupIds: string,
+    @Query('includeDescendants') includeDescendants: string,
     @Query('kind') kind: string,
     @CurrentUser() user: AuthUser,
   ) {
     if (!file) throw new BadRequestException('ファイルが指定されていません');
     // multer は originalname を latin1 で渡すため UTF-8 に復元（日本語ファイル名対策）
     const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const validated = validateUpload(file.buffer, originalName, file.mimetype, 'document');
     return this.docs.createFromUpload(
-      { buffer: file.buffer, originalName, mimeType: file.mimetype },
-      appId || null,
+      { buffer: file.buffer, originalName: validated.originalName, mimeType: validated.mimeType },
+      {
+        appId: appId || null,
+        visibilityMode: (visibilityMode || (appId ? 'legacy' : 'all')) as any,
+        groupIds: (groupIds || '').split(',').map((id) => id.trim()).filter(Boolean),
+        includeDescendants: includeDescendants !== 'false',
+      },
       user.userId,
       kind || null,
     );

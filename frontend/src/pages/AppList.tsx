@@ -14,7 +14,7 @@ import {
   Blocks, Radar,
   type LucideIcon,
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { Layout } from '../components/Layout';
 import { getUser, canCreateApp, userDisplay } from '../lib/auth';
 import { Button } from '../components/ui/Button';
@@ -128,7 +128,7 @@ export function AppList() {
     setLoading(true);
     api.get('/apps').then(setApps).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
   };
-  useEffect(load, []);
+  useEffect(load, [toast]);
 
   const loadTemplates = () => {
     setTplLoading(true);
@@ -175,7 +175,25 @@ export function AppList() {
     if (selected.kind === 'suite') {
       setSubmitting(true);
       try {
-        const res = await api.post('/apps/from-suite', { suiteId: selected.suite.id, withSamples });
+        let res: { apps?: unknown[] } | undefined;
+        try {
+          res = await api.post('/apps/from-suite', { suiteId: selected.suite.id, withSamples });
+        } catch (error) {
+          const body = error instanceof ApiError ? error.body as { code?: string; existingSets?: number } : null;
+          if (!(error instanceof ApiError) || error.status !== 409 || body?.code !== 'SUITE_ALREADY_EXISTS') throw error;
+          const count = body.existingSets || 1;
+          const proceed = await confirm({
+            title: '同じ連携アプリ群があります',
+            message: `「${selected.suite.name}」がすでに${count}セットあります。さらに1セット作成しますか？ダッシュボードも${selected.suite.apps.length}個追加されます。`,
+            confirmText: 'もう1セット作成',
+          });
+          if (!proceed) return;
+          res = await api.post('/apps/from-suite', {
+            suiteId: selected.suite.id,
+            withSamples,
+            allowDuplicate: true,
+          });
+        }
         setPicker(false);
         toast.success(`${res?.apps?.length ?? selected.suite.apps.length}個の連携アプリを作成しました`);
         load();

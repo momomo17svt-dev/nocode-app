@@ -11,14 +11,17 @@ import {
   Req,
   Res,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
-import type { Response } from 'express';
-import { RecordsService } from './records.service';
+import type { Request, Response } from 'express';
+import { RecordsService, type RecordListCondition } from './records.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { PermissionService, type EffectivePermission } from '../permissions/permission.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CreateRecordDto, UpdateRecordDto, CommentDto, ImportDto, BulkDeleteDto, BulkDistributeDto, ReferencingCountDto, ExistDto } from './dto/record.dto';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @UseGuards(JwtAuthGuard)
 @Controller('api/records')
@@ -47,7 +50,43 @@ export class RecordsController {
     const allowed = await this.permission.allowedCreatorIds(appId, user.userId, user.role, 'view', perm.canManage);
     // 対象社員フィールド基準の絞り込み（設定時のみ・非特権ユーザー）
     const fieldScope = await this.permission.recordFieldScope(appId, user.userId, user.role, perm.canManage);
+    if (query.page) {
+      const page = Number(query.page);
+      const pageSize = Number(query.pageSize || 50);
+      if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1) {
+        throw new BadRequestException('ページ指定が正しくありません');
+      }
+      const conditions = this.parseConditions(query.conditions);
+      const sort = query.sortField
+        ? { field: query.sortField, order: query.sortOrder === 'asc' ? ('asc' as const) : ('desc' as const) }
+        : null;
+      return this.recordsService.findPage(
+        appId,
+        { page, pageSize, search, conditions, sort },
+        allowed,
+        fieldScope,
+      );
+    }
     return this.recordsService.findAll(appId, { search, filters }, allowed, fieldScope);
+  }
+
+  private parseConditions(raw?: string): RecordListCondition[] {
+    if (!raw) return [];
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed) || parsed.length > 20) throw new Error('invalid');
+      const allowedOps = new Set(['contains', 'eq', 'ne', 'gt', 'lt', 'empty', 'notempty']);
+      return parsed.map((item) => {
+        if (!item || typeof item !== 'object') throw new Error('invalid');
+        const entry = item as Record<string, unknown>;
+        const field = typeof entry.field === 'string' ? entry.field.trim() : '';
+        const op = typeof entry.op === 'string' ? entry.op : '';
+        if (!field || field.length > 100 || !allowedOps.has(op)) throw new Error('invalid');
+        return { field, op, value: String(entry.value ?? '') } as RecordListCondition;
+      });
+    } catch {
+      throw new BadRequestException('絞り込み条件が正しくありません');
+    }
   }
 
   /** CSVエクスポート（仕様: アプリ管理権限が必要・監査ログ必須）。 */
@@ -55,7 +94,7 @@ export class RecordsController {
   async exportCsv(
     @Query('appId') appId: string,
     @CurrentUser() user: AuthUser,
-    @Req() req: any,
+    @Req() req: Request,
     @Res() res: Response,
   ) {
     await this.permission.assert(user.userId, user.role, appId, 'canManage');
@@ -70,6 +109,37 @@ export class RecordsController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="records_${appId}.csv"`);
     res.send(csv);
+  }
+
+  /** システム管理者向け: 30日以内の削除レコード一覧。 */
+  @Get('trash')
+  @UseGuards(RolesGuard)
+  @Roles('SystemAdmin')
+  listTrash(@Query('page') pageRaw?: string, @Query('pageSize') pageSizeRaw?: string) {
+    const page = Number(pageRaw || 1);
+    const pageSize = Number(pageSizeRaw || 50);
+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+      throw new BadRequestException('ページ指定が正しくありません');
+    }
+    return this.recordsService.listTrash(page, pageSize);
+  }
+
+  @Post('trash/:id/restore')
+  @UseGuards(RolesGuard)
+  @Roles('SystemAdmin')
+  async restoreTrash(@Param('id') id: string, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    const result = await this.recordsService.restoreTrash(id, user.userId);
+    await this.audit.log({ userId: user.userId, actionType: 'RECORD_RESTORE', targetResource: 'record', targetId: result.recordId, details: { appId: result.appId }, ipAddress: req.ip });
+    return result;
+  }
+
+  @Delete('trash/:id')
+  @UseGuards(RolesGuard)
+  @Roles('SystemAdmin')
+  async purgeTrash(@Param('id') id: string, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    const result = await this.recordsService.purgeTrash(id);
+    await this.audit.log({ userId: user.userId, actionType: 'RECORD_PURGE', targetResource: 'trash', targetId: id, ipAddress: req.ip });
+    return result;
   }
 
   @Get(':id')
@@ -98,7 +168,7 @@ export class RecordsController {
   }
 
   @Post()
-  async create(@Body() dto: CreateRecordDto, @CurrentUser() user: AuthUser, @Req() req: any) {
+  async create(@Body() dto: CreateRecordDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     await this.permission.assert(user.userId, user.role, dto.appId, 'canAdd');
     const record = await this.recordsService.create(dto.appId, dto.data, user.userId);
     await this.audit.log({
@@ -113,7 +183,7 @@ export class RecordsController {
   }
 
   @Post('import')
-  async importCsv(@Body() dto: ImportDto, @CurrentUser() user: AuthUser, @Req() req: any) {
+  async importCsv(@Body() dto: ImportDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     await this.permission.assert(user.userId, user.role, dto.appId, 'canAdd');
     const result = await this.recordsService.importRows(dto.appId, dto.rows, user.userId);
     await this.audit.log({
@@ -128,7 +198,7 @@ export class RecordsController {
   }
 
   @Post('bulk-delete')
-  async bulkDelete(@Body() dto: BulkDeleteDto, @CurrentUser() user: AuthUser, @Req() req: any) {
+  async bulkDelete(@Body() dto: BulkDeleteDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     const perm = await this.permission.getEffectivePermission(user.userId, user.role, dto.appId);
     let allowed: string[] | null;
     if (perm.canDelete) {
@@ -142,7 +212,7 @@ export class RecordsController {
     }
     // 対象社員フィールド基準（設定時・非特権）の範囲内のみ削除対象にする。
     const fieldScope = await this.permission.recordFieldScope(dto.appId, user.userId, user.role, perm.canManage);
-    const result = await this.recordsService.bulkRemove(dto.appId, dto.ids, allowed, fieldScope);
+    const result = await this.recordsService.bulkRemove(dto.appId, dto.ids, allowed, fieldScope, user.userId);
     await this.audit.log({
       userId: user.userId,
       actionType: 'RECORD_BULK_DELETE',
@@ -171,7 +241,7 @@ export class RecordsController {
 
   /** 一括配布: 指定ユーザーごとに担当者を設定したレコードを生成する（canAdd）。 */
   @Post('bulk-distribute')
-  async bulkDistribute(@Body() dto: BulkDistributeDto, @CurrentUser() user: AuthUser, @Req() req: any) {
+  async bulkDistribute(@Body() dto: BulkDistributeDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     await this.permission.assert(user.userId, user.role, dto.appId, 'canAdd');
     const result = await this.recordsService.bulkDistribute(
       dto.appId,
@@ -193,7 +263,7 @@ export class RecordsController {
 
   /** レコード複製。閲覧（範囲含む）+ 追加権限が必要。 */
   @Post(':id/duplicate')
-  async duplicate(@Param('id') id: string, @CurrentUser() user: AuthUser, @Req() req: any) {
+  async duplicate(@Param('id') id: string, @CurrentUser() user: AuthUser, @Req() req: Request) {
     const meta = await this.recordsService.getRecordMeta(id);
     const perm = await this.permission.assert(user.userId, user.role, meta.appId, 'canView');
     await this.assertRecordScope(meta.appId, 'view', perm, meta.createdBy, user.userId, user.role);
@@ -229,13 +299,13 @@ export class RecordsController {
     @Param('id') id: string,
     @Body() dto: UpdateRecordDto,
     @CurrentUser() user: AuthUser,
-    @Req() req: any,
+    @Req() req: Request,
   ) {
     const meta = await this.recordsService.getRecordMeta(id);
     const perm = await this.permission.getEffectivePermission(user.userId, user.role, meta.appId);
     await this.assertCanMutate(meta.appId, 'edit', perm, meta.createdBy, user.userId, user.role);
     await this.assertRecordFieldScope(meta.appId, perm.canManage, id, user.userId, user.role);
-    const record = await this.recordsService.update(id, dto.data, user.userId, { canManage: perm.canManage });
+    const record = await this.recordsService.update(id, dto.data, user.userId, dto.expectedVersion, { canManage: perm.canManage });
     await this.audit.log({
       userId: user.userId,
       actionType: 'RECORD_UPDATE',
@@ -248,12 +318,12 @@ export class RecordsController {
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string, @CurrentUser() user: AuthUser, @Req() req: any) {
+  async remove(@Param('id') id: string, @CurrentUser() user: AuthUser, @Req() req: Request) {
     const meta = await this.recordsService.getRecordMeta(id);
     const perm = await this.permission.getEffectivePermission(user.userId, user.role, meta.appId);
     await this.assertCanMutate(meta.appId, 'delete', perm, meta.createdBy, user.userId, user.role);
     await this.assertRecordFieldScope(meta.appId, perm.canManage, id, user.userId, user.role);
-    const result = await this.recordsService.remove(id);
+    const result = await this.recordsService.remove(id, user.userId);
     await this.audit.log({
       userId: user.userId,
       actionType: 'RECORD_DELETE',

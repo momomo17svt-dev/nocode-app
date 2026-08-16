@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -16,6 +16,7 @@ import { type FieldDef, formatValue, groupKey } from '../lib/fields';
 import { buildOptionColors, softColor, NEUTRAL_COLOR } from '../lib/colors';
 import { parseCsv, readCsvFile } from '../lib/csv';
 import { getUser } from '../lib/auth';
+import { getLocale } from '../lib/i18n';
 import { pushRecent } from '../lib/prefs';
 import { Chart, type ChartDatum } from '../components/Chart';
 import { Button } from '../components/ui/Button';
@@ -51,6 +52,16 @@ const OPS: { v: string; label: string }[] = [
   { v: 'notempty', label: 'が空でない' },
 ];
 
+const PAGE_SIZE = 50;
+
+interface RecordPageResponse {
+  items: any[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export function RecordList() {
   const { appId } = useParams();
   const navigate = useNavigate();
@@ -76,6 +87,14 @@ export function RecordList() {
   const [distributing, setDistributing] = useState(false);
   const [quickView, setQuickView] = useState<any>(null);
   const [page, setPage] = useState(1);
+  const [recordTotal, setRecordTotal] = useState(0);
+  const [serverTotalPages, setServerTotalPages] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  const activeView = useMemo(
+    () => views.find((view) => view.id === selectedViewId) || null,
+    [views, selectedViewId],
+  );
 
   // レコード単位の編集/削除可否。アプリ権限(編集範囲owner/org含む)に加え、
   // 「追加権限ユーザーは自分が追加したレコードを編集/削除できる」設定を考慮する。
@@ -92,10 +111,43 @@ export function RecordList() {
     return (!!perm?.canDelete && allowMutate) || (!!perm?.canAdd && !!app?.creatorDeleteOwn && isOwner);
   };
 
-  const loadRecords = () => api.get(`/records?appId=${appId}`).then(setRecords).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
-  const loadViews = () => api.get(`/views?appId=${appId}`).then((vs: any[]) =>
-    setViews(vs.map((v) => ({ id: v.id, name: v.name, isShared: v.isShared, columns: v.columns || [], conditions: v.conditions || [], sort: v.sort || null })))
-  ).catch(() => {});
+  const loadRecords = useCallback(async () => {
+    if (!appId) return;
+    setLoading(true);
+    try {
+      if (tab === 'list') {
+        const params = new URLSearchParams({ appId, page: String(page), pageSize: String(PAGE_SIZE) });
+        if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
+        if (activeView?.conditions?.length) params.set('conditions', JSON.stringify(activeView.conditions));
+        const effectiveSort = sort || activeView?.sort || null;
+        if (effectiveSort) {
+          params.set('sortField', effectiveSort.field);
+          params.set('sortOrder', effectiveSort.order);
+        }
+        const result: RecordPageResponse = await api.get(`/records?${params.toString()}`);
+        setRecords(result.items || []);
+        setRecordTotal(result.total || 0);
+        setServerTotalPages(result.totalPages || 1);
+        if (result.page !== page) setPage(result.page);
+      } else {
+        const rows: any[] = await api.get(`/records?appId=${encodeURIComponent(appId)}`);
+        setRecords(rows || []);
+        setRecordTotal(rows?.length || 0);
+        setServerTotalPages(1);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'レコードの取得に失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  }, [activeView, appId, debouncedSearch, page, sort, tab, toast]);
+
+  const loadViews = useCallback(() => {
+    if (!appId) return Promise.resolve();
+    return api.get(`/views?appId=${appId}`).then((vs: any[]) =>
+      setViews(vs.map((v) => ({ id: v.id, name: v.name, isShared: v.isShared, columns: v.columns || [], conditions: v.conditions || [], sort: v.sort || null })))
+    ).catch(() => undefined);
+  }, [appId]);
 
   useEffect(() => {
     if (!appId) return;
@@ -103,13 +155,19 @@ export function RecordList() {
     api.get(`/apps/${appId}`).then((a) => { setApp(a); setPerm(a.myPermission); }).catch((e) => toast.error(e.message));
     api.get(`/fields?appId=${appId}`).then(setFields).catch(() => {});
     api.get('/directory/users').then((us: any[]) => { setUsers(us); setUserMap(Object.fromEntries(us.map((u) => [u.id, u.loginId]))); }).catch(() => {});
-    loadRecords();
     loadViews();
-  }, [appId]);
+  }, [appId, loadViews, toast]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    void loadRecords();
+  }, [loadRecords]);
 
   useEffect(() => { setPage(1); }, [search, selectedViewId, sort]);
-
-  const activeView = views.find((v) => v.id === selectedViewId) || null;
 
   const columns = useMemo(() => {
     const usable = fields.filter((f) => f.fieldType !== 'section');
@@ -131,9 +189,12 @@ export function RecordList() {
 
   // ステータス/セレクトはその場で変更（楽観的更新→失敗時は再読込）
   const inlineEdit = async (recordId: string, code: string, value: any) => {
+    const current = records.find((r) => r.id === recordId);
+    if (!current) return;
     setRecords((rs) => rs.map((r) => (r.id === recordId ? { ...r, dataJson: { ...r.dataJson, [code]: value } } : r)));
     try {
-      await api.put(`/records/${recordId}`, { data: { [code]: value } });
+      const updated = await api.put(`/records/${recordId}`, { data: { [code]: value }, expectedVersion: current.version || 1 });
+      setRecords((rows) => rows.map((record) => record.id === recordId ? { ...record, version: updated.version, updatedAt: updated.updatedAt } : record));
     } catch (e: any) {
       toast.error(e.message || '更新に失敗しました');
       loadRecords();
@@ -175,6 +236,7 @@ export function RecordList() {
   };
 
   const displayed = useMemo(() => {
+    if (tab === 'list') return records;
     let rows = [...records];
     for (const c of activeView?.conditions || []) {
       rows = rows.filter((r) => matchCond(r.dataJson?.[c.field], c));
@@ -194,10 +256,19 @@ export function RecordList() {
       });
     }
     return rows;
-  }, [records, activeView, search, sort, fields]);
+  }, [records, activeView, search, sort, fields, tab]);
 
   const toggleSort = (code: string) => {
     setSort((s) => s && s.field === code ? { field: code, order: s.order === 'asc' ? 'desc' : 'asc' } : { field: code, order: 'asc' });
+  };
+
+  const selectTab = (nextTab: Tab) => {
+    if (nextTab === tab) return;
+    setRecords([]);
+    setSelected(new Set());
+    setPage(1);
+    setLoading(true);
+    setTab(nextTab);
   };
 
   const exportCsv = async () => {
@@ -245,7 +316,12 @@ export function RecordList() {
   const removeRecord = async (id: string) => {
     const warn = await referencingWarn([id]);
     if (!(await confirm({ message: `このレコードを削除しますか？${warn}`, danger: true, confirmText: '削除' }))) return;
-    try { await api.delete(`/records/${id}`); setRecords((rs) => rs.filter((r) => r.id !== id)); toast.success('削除しました'); } catch (e: any) { toast.error(e.message); }
+    try {
+      await api.delete(`/records/${id}`);
+      setRecords((rows) => rows.filter((record) => record.id !== id));
+      setRecordTotal((total) => Math.max(0, total - 1));
+      toast.success('削除しました');
+    } catch (e: any) { toast.error(e.message); }
   };
   const bulkDelete = async () => {
     if (selected.size === 0) return;
@@ -296,10 +372,14 @@ export function RecordList() {
     );
   }
   const ownerOnly = app.recordEditScope === 'owner' && !perm?.canManage;
-  const PAGE_SIZE = 50;
-  const totalPages = Math.max(1, Math.ceil(displayed.length / PAGE_SIZE));
+  const totalPages = tab === 'list'
+    ? serverTotalPages
+    : Math.max(1, Math.ceil(displayed.length / PAGE_SIZE));
   const curPage = Math.min(page, totalPages);
-  const paged = displayed.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
+  const paged = tab === 'list'
+    ? displayed
+    : displayed.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
+  const visibleTotal = tab === 'list' ? recordTotal : displayed.length;
 
   return (
     <Layout>
@@ -327,14 +407,14 @@ export function RecordList() {
       </div>
 
       <div className="flex gap-1 border-b border-border mb-3 overflow-x-auto">
-        <TabButton active={tab === 'list'} onClick={() => setTab('list')} icon={<List className="size-4" />}>一覧</TabButton>
-        <TabButton active={tab === 'kanban'} onClick={() => setTab('kanban')} icon={<Columns3 className="size-4" />}>かんばん</TabButton>
-        <TabButton active={tab === 'calendar'} onClick={() => setTab('calendar')} icon={<CalendarDays className="size-4" />}>カレンダー</TabButton>
+        <TabButton active={tab === 'list'} onClick={() => selectTab('list')} icon={<List className="size-4" />}>一覧</TabButton>
+        <TabButton active={tab === 'kanban'} onClick={() => selectTab('kanban')} icon={<Columns3 className="size-4" />}>かんばん</TabButton>
+        <TabButton active={tab === 'calendar'} onClick={() => selectTab('calendar')} icon={<CalendarDays className="size-4" />}>カレンダー</TabButton>
         {fields.some((f) => f.fieldType === 'location') && (
-          <TabButton active={tab === 'map'} onClick={() => setTab('map')} icon={<MapPin className="size-4" />}>地図</TabButton>
+          <TabButton active={tab === 'map'} onClick={() => selectTab('map')} icon={<MapPin className="size-4" />}>地図</TabButton>
         )}
-        <TabButton active={tab === 'progress'} onClick={() => setTab('progress')} icon={<Target className="size-4" />}>進捗</TabButton>
-        <TabButton active={tab === 'chart'} onClick={() => setTab('chart')} icon={<BarChart3 className="size-4" />}>集計・グラフ</TabButton>
+        <TabButton active={tab === 'progress'} onClick={() => selectTab('progress')} icon={<Target className="size-4" />}>進捗</TabButton>
+        <TabButton active={tab === 'chart'} onClick={() => selectTab('chart')} icon={<BarChart3 className="size-4" />}>集計・グラフ</TabButton>
       </div>
 
       {tab === 'list' && (
@@ -440,7 +520,7 @@ export function RecordList() {
                         )}
                         {columns.map((f) => <td key={f.fieldCode} className="px-4 py-1.5 align-top">{renderCell(f, r)}</td>)}
                         <td className="px-4 py-1.5 text-muted whitespace-nowrap">{r.creator?.loginId}</td>
-                        <td className="px-4 py-1.5 text-muted whitespace-nowrap">{new Date(r.updatedAt).toLocaleString('ja-JP')}</td>
+                        <td className="px-4 py-1.5 text-muted whitespace-nowrap">{new Date(r.updatedAt).toLocaleString(getLocale())}</td>
                         <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5 justify-end">
                             {canEditRecord(r) && <Button variant="ghost" size="sm" icon={<Pencil className="size-4" />} onClick={() => navigate(`/apps/${appId}/records/${r.id}/edit`)} aria-label="編集" />}
@@ -467,8 +547,8 @@ export function RecordList() {
           {!loading && (
             <div className="flex items-center justify-between gap-2 flex-wrap mt-2">
               <p className="text-xs text-muted">
-                {displayed.length} 件
-                {displayed.length > PAGE_SIZE && `（${(curPage - 1) * PAGE_SIZE + 1}–${Math.min(curPage * PAGE_SIZE, displayed.length)} 件目を表示）`}
+                {visibleTotal} 件
+                {visibleTotal > PAGE_SIZE && `（${(curPage - 1) * PAGE_SIZE + 1}–${Math.min(curPage * PAGE_SIZE, visibleTotal)} 件目を表示）`}
               </p>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
@@ -793,10 +873,10 @@ function AggregatePanel({ fields, records, userMap }: { fields: FieldDef[]; reco
       const rk = resolveKey(rf, r.dataJson?.[rowField], userMap);
       const ck = resolveKey(cf, r.dataJson?.[colField], userMap);
       rowKeys.add(rk); colKeys.add(ck);
-      const k = rk + ' ' + ck;
+      const k = rk + '\u0000' + ck;
       cell.set(k, (cell.get(k) || 0) + 1);
     }
-    return { rows: Array.from(rowKeys).sort(), cols: Array.from(colKeys).sort(), get: (r: string, c: string) => cell.get(r + ' ' + c) || 0 };
+    return { rows: Array.from(rowKeys).sort(), cols: Array.from(colKeys).sort(), get: (r: string, c: string) => cell.get(r + '\u0000' + c) || 0 };
   }, [records, rowField, colField, fields, userMap]);
 
   return (
@@ -838,10 +918,10 @@ function AggregatePanel({ fields, records, userMap }: { fields: FieldDef[]; reco
           </div>
           {data.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-4">
-              <MiniStat label="分類" value={data.length.toLocaleString('ja-JP')} />
-              <MiniStat label="合計" value={data.reduce((s, d) => s + d.value, 0).toLocaleString('ja-JP')} />
-              <MiniStat label="平均" value={(Math.round((data.reduce((s, d) => s + d.value, 0) / data.length) * 10) / 10).toLocaleString('ja-JP')} />
-              <MiniStat label="最大" value={Math.max(...data.map((d) => d.value)).toLocaleString('ja-JP')} />
+              <MiniStat label="分類" value={data.length.toLocaleString(getLocale())} />
+              <MiniStat label="合計" value={data.reduce((s, d) => s + d.value, 0).toLocaleString(getLocale())} />
+              <MiniStat label="平均" value={(Math.round((data.reduce((s, d) => s + d.value, 0) / data.length) * 10) / 10).toLocaleString(getLocale())} />
+              <MiniStat label="最大" value={Math.max(...data.map((d) => d.value)).toLocaleString(getLocale())} />
             </div>
           )}
           <Chart type={chartType} data={data} valueLabel={aggregate === 'count' ? '件数' : '合計'} />
@@ -986,7 +1066,7 @@ function KanbanView({ fields, records, appId, onOpen, userMap, canEdit, onChange
               </div>
               {metricField && (
                 <div className="px-2 mb-1.5 text-xs text-muted tabular-nums">
-                  {metricField.label}: <span className="font-semibold text-content">{colSum(items).toLocaleString('ja-JP')}{metricField.settings?.unit ? ` ${metricField.settings.unit}` : ''}</span>
+                  {metricField.label}: <span className="font-semibold text-content">{colSum(items).toLocaleString(getLocale())}{metricField.settings?.unit ? ` ${metricField.settings.unit}` : ''}</span>
                 </div>
               )}
               <div className="space-y-2 min-h-[60px] px-0.5 pb-1">
@@ -1229,7 +1309,7 @@ function ProgressPanel({ app, fields, records, userMap, canRemind, appId }: {
   const [statusCode, setStatusCode] = useState<string>(proc?.statusField || statusFields[0]?.fieldCode || '');
   const [assigneeCode, setAssigneeCode] = useState<string>(userFields[0]?.fieldCode || '');
   const sf = fields.find((f) => f.fieldCode === statusCode);
-  const options: string[] = sf?.settings?.options || [];
+  const options = useMemo<string[]>(() => sf?.settings?.options || [], [sf]);
 
   // 既定の「完了」状態: プロセス定義があれば遷移先に無い（終端）状態、無ければ最後の選択肢
   const terminalDefault = useMemo(() => {
@@ -1242,14 +1322,17 @@ function ProgressPanel({ app, fields, records, userMap, canRemind, appId }: {
   }, [proc, statusCode, options]);
 
   const [doneSet, setDoneSet] = useState<Set<string>>(new Set());
-  useEffect(() => { setDoneSet(new Set(terminalDefault)); }, [statusCode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setDoneSet(new Set(terminalDefault)); }, [terminalDefault]);
 
-  const isDone = (r: any) => doneSet.has(String(r.dataJson?.[statusCode] ?? ''));
+  const isDone = useCallback(
+    (r: any) => doneSet.has(String(r.dataJson?.[statusCode] ?? '')),
+    [doneSet, statusCode],
+  );
   const total = records.length;
   const done = records.filter(isDone).length;
   const rate = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  const optColors = buildOptionColors(options);
+  const optColors = useMemo(() => buildOptionColors(options), [options]);
   const statusCounts = useMemo<ChartDatum[]>(() => {
     const m = new Map<string, number>();
     for (const r of records) { const k = groupKey(r.dataJson?.[statusCode]); m.set(k, (m.get(k) || 0) + 1); }
@@ -1257,7 +1340,7 @@ function ProgressPanel({ app, fields, records, userMap, canRemind, appId }: {
     for (const o of options) if (m.has(o)) { out.push({ label: o, value: m.get(o)!, color: optColors[o] }); m.delete(o); }
     for (const [label, value] of m) out.push({ label, value, color: optColors[label] || NEUTRAL_COLOR });
     return out;
-  }, [records, statusCode, options]);
+  }, [records, statusCode, options, optColors]);
 
   // 担当者別の進捗（完了率つき）
   const byAssignee = useMemo(() => {
@@ -1274,7 +1357,7 @@ function ProgressPanel({ app, fields, records, userMap, canRemind, appId }: {
     return Array.from(m.entries())
       .map(([uid, v]) => ({ uid, total: v.total, done: v.done, rate: Math.round((v.done / v.total) * 100) }))
       .sort((a, b) => a.rate - b.rate || b.total - a.total);
-  }, [records, assigneeCode, doneSet, statusCode]);
+  }, [records, assigneeCode, isDone]);
   const pendingUsers = byAssignee.filter((a) => a.rate < 100);
 
   const remind = async (userIds: string[]) => {
@@ -1309,9 +1392,9 @@ function ProgressPanel({ app, fields, records, userMap, canRemind, appId }: {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard icon={ListChecks} label="総レコード数" value={total.toLocaleString('ja-JP')} color={C.primary} />
-          <StatCard icon={CheckCircle2} label="完了" value={done.toLocaleString('ja-JP')} color={C.success} />
-          <StatCard icon={CircleDashed} label="未完了" value={(total - done).toLocaleString('ja-JP')} color={C.warning} />
+          <StatCard icon={ListChecks} label="総レコード数" value={total.toLocaleString(getLocale())} color={C.primary} />
+          <StatCard icon={CheckCircle2} label="完了" value={done.toLocaleString(getLocale())} color={C.success} />
+          <StatCard icon={CircleDashed} label="未完了" value={(total - done).toLocaleString(getLocale())} color={C.warning} />
           <StatCard icon={Target} label="完了率" value={rate} suffix="%" color={C.primary} />
         </div>
 

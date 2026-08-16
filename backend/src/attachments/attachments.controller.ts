@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { PermissionService } from '../permissions/permission.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { validateUpload } from '../common/file-validation.util';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
@@ -65,9 +66,14 @@ export class AttachmentsController {
     const meta = await this.attachmentsService.getRecordMeta(recordId);
     await this.assertCanModify(user, meta);
 
+    const validated = validateUpload(
+      file.buffer,
+      Buffer.from(file.originalname, 'latin1').toString('utf8'),
+      file.mimetype,
+    );
     const saved = await this.attachmentsService.createFromUpload({
-      originalName: Buffer.from(file.originalname, 'latin1').toString('utf8'),
-      mimeType: file.mimetype,
+      originalName: validated.originalName,
+      mimeType: validated.mimeType,
       size: file.size,
       recordId,
       fieldCode,

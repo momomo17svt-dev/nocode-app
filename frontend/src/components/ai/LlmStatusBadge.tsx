@@ -1,24 +1,29 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, RefreshCw, Loader2, Clock } from 'lucide-react';
-import { aiApi, type LlmHealth } from '../../lib/ai';
+import { aiApi, type LlmHealth, type LlmProvider } from '../../lib/ai';
 import { useLlmQueue } from './QueueHint';
 
-/** LM Studio 接続状態のバナー。未接続時は案内を表示する。順番待ち/モデル読込中も表示。 */
+const PROVIDER_LABELS: Record<LlmProvider, string> = {
+  lmstudio: 'LM Studio', ollama: 'Ollama', openai: 'OpenAI', openrouter: 'OpenRouter',
+  groq: 'Groq', gemini: 'Gemini', mistral: 'Mistral', custom: 'OpenAI互換API',
+};
+
+/** LLM接続状態のバナー。未接続時は案内を表示する。順番待ち/モデル読込中も表示。 */
 export function LlmStatusBadge({ onHealth }: { onHealth?: (h: LlmHealth) => void }) {
   const [health, setHealth] = useState<LlmHealth | null>(null);
   const [loading, setLoading] = useState(true);
-  // 接続済みの間だけキューを軽量ポーリング（LM Studio非接触）
+  // 接続済みの間だけアプリ内キューを軽量ポーリング（外部LLMには接触しない）
   const queue = useLlmQueue(!!health?.ok);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     aiApi
       .health()
       .then((h) => { setHealth(h); onHealth?.(h); })
       .catch(() => setHealth(null))
       .finally(() => setLoading(false));
-  };
-  useEffect(() => { load();   }, []);
+  }, [onHealth]);
+  useEffect(() => { load(); }, [load]);
 
   const ok = !!health?.ok;
   const q = queue || health?.queue || null;
@@ -37,12 +42,12 @@ export function LlmStatusBadge({ onHealth }: { onHealth?: (h: LlmHealth) => void
       <div className="flex-1 min-w-0">
         {ok ? (
           <>
-            <p className="font-medium">ローカルLLMに接続済み</p>
+            <p className="font-medium">{health ? PROVIDER_LABELS[health.provider] : 'LLM'}に接続済み</p>
             <p className="text-xs text-muted mt-0.5 break-words">
               {health?.baseUrl}　/　チャット: {health?.resolvedChatModel || '—'}{!health?.chatModel && health?.resolvedChatModel ? '（自動）' : ''}　/　埋め込み: {health?.resolvedEmbedModel || '未検出'}{!health?.embedModel && health?.resolvedEmbedModel ? '（自動）' : ''}
             </p>
             {!health?.resolvedEmbedModel && (
-              <p className="text-xs text-warning mt-1">※ 埋め込みモデルが見つかりません。LM Studio で埋め込みモデルをロードすると RAG・検索が使えます。</p>
+              <p className="text-xs text-warning mt-1">※ 埋め込みモデル名を設定するとRAG・検索が使えます。</p>
             )}
             {(modelLoading || waiting > 0 || running > 0) && (
               <p className="text-xs text-muted mt-1 flex items-center gap-1.5">
@@ -56,9 +61,9 @@ export function LlmStatusBadge({ onHealth }: { onHealth?: (h: LlmHealth) => void
           </>
         ) : (
           <>
-            <p className="font-medium">ローカルLLMに接続できません</p>
+            <p className="font-medium">LLMに接続できません</p>
             <p className="text-xs text-muted mt-0.5 break-words">
-              {health?.error || 'LM Studio でローカルサーバとモデルを起動してください。'}（{health?.baseUrl}）
+              {health?.error || 'ベースURL、APIキー、モデル設定をご確認ください。'}（{health?.baseUrl}）
             </p>
           </>
         )}

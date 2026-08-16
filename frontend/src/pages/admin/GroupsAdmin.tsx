@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Plus, Trash2, Users, UserMinus, CornerDownRight, ChevronUp, ChevronDown,
   ChevronRight, ChevronLeft, Search, FolderTree, Move, X,
@@ -81,9 +81,12 @@ export function GroupsAdmin() {
   const [moveToRoot, setMoveToRoot] = useState(false);
   const [moveParent, setMoveParent] = useState<{ id: string; label: string } | null>(null);
 
-  const loadRoots = () => api.get('/groups/children').then(setRoots).catch((e) => toast.error(e.message));
+  const loadRoots = useCallback(
+    () => api.get('/groups/children').then(setRoots).catch((e) => toast.error(e.message)),
+    [toast],
+  );
 
-  useEffect(() => { loadRoots(); }, []);
+  useEffect(() => { loadRoots(); }, [loadRoots]);
 
   // 表示中（最上位＋展開済み）をまとめて再取得する。構造変更後の同期に使う。
   const reloadVisible = async () => {

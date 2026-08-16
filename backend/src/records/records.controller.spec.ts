@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { RecordsController } from './records.controller';
 
 const PERM_ALL = { canView: true, canAdd: true, canEdit: true, canDelete: true, canManage: true };
@@ -14,6 +14,7 @@ describe('RecordsController', () => {
   beforeEach(() => {
     records = {
       findAll: jest.fn().mockResolvedValue([]),
+      findPage: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50, totalPages: 1 }),
       findOne: jest.fn().mockResolvedValue({ id: 'r1' }),
       getRecordMeta: jest.fn(),
       getRecordFieldValue: jest.fn().mockResolvedValue(''),
@@ -45,6 +46,34 @@ describe('RecordsController', () => {
       permission.allowedCreatorIds.mockResolvedValue(['u1']);
       await controller.findAll('app1', '', { appId: 'app1' } as any, user);
       expect(records.findAll).toHaveBeenCalledWith('app1', expect.anything(), ['u1'], null);
+    });
+
+    it('page指定時は検証済みの検索・条件・ソートをページ取得へ渡す', async () => {
+      const conditions = JSON.stringify([{ field: 'amount', op: 'gt', value: '100' }]);
+      await controller.findAll(
+        'app1',
+        'urgent',
+        { appId: 'app1', page: '2', pageSize: '25', conditions, sortField: 'amount', sortOrder: 'asc' },
+        user,
+      );
+      expect(records.findPage).toHaveBeenCalledWith(
+        'app1',
+        {
+          page: 2,
+          pageSize: 25,
+          search: 'urgent',
+          conditions: [{ field: 'amount', op: 'gt', value: '100' }],
+          sort: { field: 'amount', order: 'asc' },
+        },
+        null,
+        null,
+      );
+    });
+
+    it('不正なページ条件を拒否する', async () => {
+      await expect(
+        controller.findAll('app1', '', { appId: 'app1', page: '0' }, user),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -82,9 +111,9 @@ describe('RecordsController', () => {
   describe('update', () => {
     it('編集権限を検証し canManage を渡して更新する', async () => {
       records.getRecordMeta.mockResolvedValue({ appId: 'app1', createdBy: 'u1' });
-      await controller.update('r1', { data: { y: 2 } } as any, user, req);
+      await controller.update('r1', { data: { y: 2 }, expectedVersion: 1 } as any, user, req);
       expect(permission.getEffectivePermission).toHaveBeenCalledWith('u1', 'StandardUser', 'app1');
-      expect(records.update).toHaveBeenCalledWith('r1', { y: 2 }, 'u1', { canManage: true });
+      expect(records.update).toHaveBeenCalledWith('r1', { y: 2 }, 'u1', 1, { canManage: true });
       expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'RECORD_UPDATE' }));
     });
 
@@ -92,8 +121,8 @@ describe('RecordsController', () => {
       records.getRecordMeta.mockResolvedValue({ appId: 'app1', createdBy: 'u1' });
       permission.getEffectivePermission.mockResolvedValue({ ...PERM_ALL, canEdit: false, canManage: false });
       permission.getOwnMutationFlags.mockResolvedValue({ editOwn: true, deleteOwn: false });
-      await controller.update('r1', { data: { y: 2 } } as any, user, req);
-      expect(records.update).toHaveBeenCalledWith('r1', { y: 2 }, 'u1', { canManage: false });
+      await controller.update('r1', { data: { y: 2 }, expectedVersion: 1 } as any, user, req);
+      expect(records.update).toHaveBeenCalledWith('r1', { y: 2 }, 'u1', 1, { canManage: false });
     });
 
     it('追加権限のみで editOwn 設定OFFなら自分のレコードでも更新できない', async () => {
@@ -118,7 +147,7 @@ describe('RecordsController', () => {
       permission.getEffectivePermission.mockResolvedValue({ ...PERM_ALL, canManage: false });
       permission.allowedCreatorIds.mockResolvedValue(['u1']);
       await controller.bulkDelete({ appId: 'app1', ids: ['a', 'b'] } as any, user, req);
-      expect(records.bulkRemove).toHaveBeenCalledWith('app1', ['a', 'b'], ['u1'], null);
+      expect(records.bulkRemove).toHaveBeenCalledWith('app1', ['a', 'b'], ['u1'], null, 'u1');
       expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'RECORD_BULK_DELETE' }));
     });
 
@@ -126,7 +155,7 @@ describe('RecordsController', () => {
       permission.getEffectivePermission.mockResolvedValue({ ...PERM_ALL, canDelete: false, canManage: false });
       permission.getOwnMutationFlags.mockResolvedValue({ editOwn: false, deleteOwn: true });
       await controller.bulkDelete({ appId: 'app1', ids: ['a', 'b'] } as any, user, req);
-      expect(records.bulkRemove).toHaveBeenCalledWith('app1', ['a', 'b'], ['u1'], null);
+      expect(records.bulkRemove).toHaveBeenCalledWith('app1', ['a', 'b'], ['u1'], null, 'u1');
     });
 
     it('削除権限なし + deleteOwn 設定OFFなら Forbidden', async () => {

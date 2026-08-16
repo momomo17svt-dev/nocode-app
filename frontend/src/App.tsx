@@ -1,52 +1,65 @@
-import React from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Login } from './pages/Login';
-import { Home } from './pages/Home';
-import { Dashboard } from './pages/Dashboard';
-import { Board } from './pages/Board';
-import { AppList } from './pages/AppList';
-import { AppSettings } from './pages/AppSettings';
-import { AiAssistant } from './pages/AiAssistant';
-import { AiAdmin } from './pages/admin/AiAdmin';
-import { RecordList } from './pages/RecordList';
-import { RecordEditor } from './pages/RecordEditor';
-import { RecordDetail } from './pages/RecordDetail';
-import { GovDocViewer } from './pages/GovDocViewer';
-import { Knowledge } from './pages/Knowledge';
-import { PrintReport } from './pages/PrintReport';
-import { PrintReportBatch } from './pages/PrintReportBatch';
-import { PublicForm } from './pages/PublicForm';
-import { UsersAdmin } from './pages/admin/UsersAdmin';
-import { GroupsAdmin } from './pages/admin/GroupsAdmin';
-import { AuditLogs } from './pages/admin/AuditLogs';
-import { ChangePassword } from './pages/ChangePassword';
-import { getToken, getUser, isAdmin, canManageDirectory } from './lib/auth';
+import { getUser, isAdmin, canManageDirectory, migrateLegacySession } from './lib/auth';
+import { api } from './lib/api';
 import { ToastProvider } from './components/ui/Toast';
 import { ConfirmProvider } from './components/ui/ConfirmDialog';
 
+const Home = lazy(async () => ({ default: (await import('./pages/Home')).Home }));
+const Dashboard = lazy(async () => ({ default: (await import('./pages/Dashboard')).Dashboard }));
+const Board = lazy(async () => ({ default: (await import('./pages/Board')).Board }));
+const AppList = lazy(async () => ({ default: (await import('./pages/AppList')).AppList }));
+const AppSettings = lazy(async () => ({ default: (await import('./pages/AppSettings')).AppSettings }));
+const AiAssistant = lazy(async () => ({ default: (await import('./pages/AiAssistant')).AiAssistant }));
+const AiAdmin = lazy(async () => ({ default: (await import('./pages/admin/AiAdmin')).AiAdmin }));
+const RecordList = lazy(async () => ({ default: (await import('./pages/RecordList')).RecordList }));
+const RecordEditor = lazy(async () => ({ default: (await import('./pages/RecordEditor')).RecordEditor }));
+const RecordDetail = lazy(async () => ({ default: (await import('./pages/RecordDetail')).RecordDetail }));
+const GovDocViewer = lazy(async () => ({ default: (await import('./pages/GovDocViewer')).GovDocViewer }));
+const Knowledge = lazy(async () => ({ default: (await import('./pages/Knowledge')).Knowledge }));
+const PrintReport = lazy(async () => ({ default: (await import('./pages/PrintReport')).PrintReport }));
+const PrintReportBatch = lazy(async () => ({ default: (await import('./pages/PrintReportBatch')).PrintReportBatch }));
+const PublicForm = lazy(async () => ({ default: (await import('./pages/PublicForm')).PublicForm }));
+const UsersAdmin = lazy(async () => ({ default: (await import('./pages/admin/UsersAdmin')).UsersAdmin }));
+const GroupsAdmin = lazy(async () => ({ default: (await import('./pages/admin/GroupsAdmin')).GroupsAdmin }));
+const AuditLogs = lazy(async () => ({ default: (await import('./pages/admin/AuditLogs')).AuditLogs }));
+const SystemSettings = lazy(async () => ({ default: (await import('./pages/admin/SystemSettings')).SystemSettings }));
+const ChangePassword = lazy(async () => ({ default: (await import('./pages/ChangePassword')).ChangePassword }));
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  if (!getToken()) return <Navigate to="/login" replace />;
+  if (!getUser()) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  if (!getToken()) return <Navigate to="/login" replace />;
+  if (!getUser()) return <Navigate to="/login" replace />;
   if (!isAdmin(getUser())) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
 /** ユーザー/グループ管理: SystemAdmin と GroupAdmin(管理者) が利用可能。 */
 function DirectoryAdminRoute({ children }: { children: React.ReactNode }) {
-  if (!getToken()) return <Navigate to="/login" replace />;
+  if (!getUser()) return <Navigate to="/login" replace />;
   if (!canManageDirectory(getUser())) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
 function App() {
+  const [sessionReady, setSessionReady] = useState(false);
+  useEffect(() => {
+    void migrateLegacySession(api.base).finally(() => setSessionReady(true));
+  }, []);
+
+  if (!sessionReady) {
+    return <div className="min-h-screen grid place-items-center text-muted">セッションを確認中...</div>;
+  }
+
   return (
     <ToastProvider>
       <ConfirmProvider>
         <Router>
+          <Suspense fallback={<div className="min-h-screen grid place-items-center text-muted">読み込み中...</div>}>
           <Routes>
         <Route path="/login" element={<Login />} />
         {/* ログイン不要の匿名公開フォーム（ProtectedRoute の外） */}
@@ -78,9 +91,11 @@ function App() {
         <Route path="/admin/users" element={<DirectoryAdminRoute><UsersAdmin /></DirectoryAdminRoute>} />
         <Route path="/admin/groups" element={<DirectoryAdminRoute><GroupsAdmin /></DirectoryAdminRoute>} />
         <Route path="/admin/audit" element={<AdminRoute><AuditLogs /></AdminRoute>} />
+        <Route path="/admin/system" element={<AdminRoute><SystemSettings /></AdminRoute>} />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </Router>
       </ConfirmProvider>
     </ToastProvider>

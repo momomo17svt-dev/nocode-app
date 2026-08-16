@@ -176,6 +176,8 @@ export class DashboardsService {
       canEdit: this.canEditWidgets(row, userId, role, groupIds),
       widgets: Array.isArray(layout.widgets) ? layout.widgets : [],
       sortOrder: row.sortOrder,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
   }
 
@@ -215,6 +217,15 @@ export class DashboardsService {
   private async scopedRecords(appId: string, userId: string, role: string) {
     const app = await this.prisma.app.findUnique({ where: { id: appId } });
     if (!app) throw new NotFoundException('アプリが見つかりません');
+    return { app, records: await this.visibleRecords(appId, userId, role) };
+  }
+
+  /**
+   * 1アプリ分のレコードを、その利用者のレコード公開範囲で絞って取得する。
+   * 通常ウィジェットと「自分のタスク」の双方が同じ絞り込みを通るよう共通化している
+   * （分岐ごとに素の findMany を書くと owner/org スコープを取りこぼすため）。
+   */
+  private async visibleRecords(appId: string, userId: string, role: string) {
     const allowed = await this.permission.allowedCreatorIds(appId, userId, role, 'view');
     let records = await this.prisma.record.findMany({
       where: { appId, ...(allowed ? { createdBy: { in: allowed } } : {}) },
@@ -225,11 +236,11 @@ export class DashboardsService {
       const allow = new Set(fieldScope.userIds);
       records = records.filter((r) => allow.has(String((r.dataJson as any)?.[fieldScope.field] ?? '')));
     }
-    return { app, records };
+    return records;
   }
 
   private async computeOne(userId: string, role: string, w: Widget, visible: string[] | null, userMap: Record<string, string>) {
-    if (w.type === 'mytasks') return this.computeMyTasks(userId, visible, userMap);
+    if (w.type === 'mytasks') return this.computeMyTasks(userId, role, visible, userMap);
 
     if (!w.appId) return { type: w.type, error: 'アプリが未設定です' };
     if (!this.canViewApp(w.appId, visible)) return { type: w.type, error: 'このアプリの閲覧権限がありません' };
@@ -478,7 +489,7 @@ export class DashboardsService {
   }
 
   // --- 自分のタスク（横断） ---
-  private async computeMyTasks(userId: string, visible: string[] | null, _userMap: Record<string, string>) {
+  private async computeMyTasks(userId: string, role: string, visible: string[] | null, _userMap: Record<string, string>) {
     const apps = await this.prisma.app.findMany({
       where: visible === null ? {} : { id: { in: visible.length ? visible : ['__none__'] } },
       orderBy: { updatedAt: 'desc' },
@@ -493,7 +504,9 @@ export class DashboardsService {
       const titleField = fields.find((f) => f.fieldType === 'text') || fields.find((f) => !['file', 'user_select', 'group_select', 'subtable', 'section'].includes(f.fieldType));
       const statusOptions: string[] = (fields.find((f) => f.fieldCode === statusField)?.settings as any)?.options || [];
       const colorMap = this.colorMapFor({ fieldCode: statusField, fieldType: 'status', label: '', settings: { options: statusOptions } });
-      const records = await this.prisma.record.findMany({ where: { appId: app.id }, orderBy: { updatedAt: 'desc' } });
+      // 通常一覧と同じレコード公開範囲を通す。担当者に自分が入っていても、
+      // owner/org スコープで見えないレコードはタスクにも出さない。
+      const records = await this.visibleRecords(app.id, userId, role);
       for (const r of records) {
         const data = (r.dataJson as any) || {};
         const assigned = userFields.some((f) => String(data[f.fieldCode] ?? '') === userId);

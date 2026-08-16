@@ -22,3 +22,5 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.startsWith('change_me')) {
   process.env.JWT_SECRET = 'e2e_test_secret_key_0123456789abcdef0123456789abcdef';
 }
 process.env.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+// 既存のBearer API連携シナリオも検証するため、E2Eだけ本文へのトークン返却を有効化。
+process.env.AUTH_EXPOSE_BEARER_TOKEN = 'true';

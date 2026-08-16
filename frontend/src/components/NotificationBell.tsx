@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, UserPlus, AtSign, AlarmClock, RefreshCw, type LucideIcon } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
+import { getLocale } from '../lib/i18n';
 
 interface Notif {
   id: string;
@@ -92,7 +93,7 @@ export function NotificationBell() {
                       <div className="min-w-0 flex-1">
                         <div className={cn('text-sm leading-snug', !n.isRead && 'font-semibold')}>{n.title}</div>
                         {n.body && <div className="text-xs text-muted truncate mt-0.5">{n.body}</div>}
-                        <div className="text-[11px] text-muted mt-0.5">{new Date(n.createdAt).toLocaleString('ja-JP')}</div>
+                        <div className="text-[11px] text-muted mt-0.5">{new Date(n.createdAt).toLocaleString(getLocale())}</div>
                       </div>
                       {!n.isRead && <span className="size-2 rounded-full bg-primary shrink-0 mt-1.5" />}
                     </button>

@@ -1,6 +1,13 @@
 import { useRef, useState } from 'react';
 import { Send, Square, Bot, User as UserIcon, Loader2, Sparkles } from 'lucide-react';
-import { askStream, type ChatMsg, type SearchHit, type QueuedInfo } from '../../lib/ai';
+import {
+  askStream,
+  type ChatMsg,
+  type ChatSourceMode,
+  type KnowledgeItem,
+  type SearchHit,
+  type QueuedInfo,
+} from '../../lib/ai';
 import { SourceCard } from './SourceCard';
 import { QueueHint } from './QueueHint';
 import { Markdown } from '../ui/Markdown';
@@ -12,18 +19,75 @@ interface Turn {
   streaming?: boolean;
 }
 
-const SUGGESTIONS = ['今週の未対応案件をまとめて', '進捗が遅れている項目は？', '最近登録されたレコードの傾向は？'];
+const SUGGESTIONS: Record<ChatSourceMode, string[]> = {
+  plain: ['依頼メールの文章を整えて', 'アイデアを箇条書きで整理して', '次の文章を分かりやすく要約して'],
+  records: ['今週の未対応案件をまとめて', '進捗が遅れている項目は？', '最近登録されたレコードの傾向は？'],
+  knowledge: ['登録資料の要点をまとめて', '関連する規程を教えて', '手順と注意点を整理して'],
+  both: ['社内データから関連情報を探して', '案件と資料を横断してまとめて', '根拠と一緒に回答して'],
+};
 
-/** RAGチャット。質問→出典付きストリーミング回答。docId 指定でその文書内のみを対象にする。 */
-export function ChatPanel({ disabled, docId, fill }: { disabled?: boolean; docId?: string; fill?: boolean }) {
+interface AppLite {
+  id: string;
+  name: string;
+}
+
+interface ChatPanelProps {
+  disabled?: boolean;
+  ragDisabled?: boolean;
+  docId?: string;
+  fill?: boolean;
+  allowSourceSelection?: boolean;
+  sourceMode?: ChatSourceMode;
+  apps?: AppLite[];
+  knowledge?: KnowledgeItem[];
+}
+
+/** 通常チャットと、参照範囲を明示したRAGチャット。 */
+export function ChatPanel({
+  disabled,
+  ragDisabled,
+  docId,
+  fill,
+  allowSourceSelection = false,
+  sourceMode,
+  apps = [],
+  knowledge = [],
+}: ChatPanelProps) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState<QueuedInfo | null>(null);
+  const [selectedMode, setSelectedMode] = useState<ChatSourceMode>(sourceMode || (docId ? 'knowledge' : 'plain'));
+  const [selectedAppId, setSelectedAppId] = useState('');
+  const [selectedDocId, setSelectedDocId] = useState(docId || '');
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  const scrollToEnd = () => requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }));
+  const activeMode: ChatSourceMode = allowSourceSelection
+    ? selectedMode
+    : sourceMode || (docId ? 'knowledge' : 'both');
+  const activeDisabled = !!disabled || (activeMode !== 'plain' && !!ragDisabled);
+
+  const scopeLabel = activeMode === 'plain'
+    ? '参照なし（通常チャット）'
+    : activeMode === 'records'
+      ? `アプリデータのみ${selectedAppId ? `：${apps.find((a) => a.id === selectedAppId)?.name || '選択したアプリ'}` : '：すべて'}`
+      : activeMode === 'knowledge'
+        ? `ナレッジのみ${(allowSourceSelection ? selectedDocId : docId) ? `：${knowledge.find((d) => d.id === (selectedDocId || docId))?.title || '選択した文書'}` : '：すべて'}`
+        : 'アプリデータ＋ナレッジ';
+
+  const resetConversation = () => {
+    setTurns([]);
+    setInput('');
+    setQueued(null);
+  };
+
+  const scrollToEnd = () => requestAnimationFrame(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight });
+    else el.scrollTop = el.scrollHeight;
+  });
 
   const send = async (q: string) => {
     const question = q.trim();
@@ -46,7 +110,13 @@ export function ChatPanel({ disabled, docId, fill }: { disabled?: boolean; docId
       });
 
     await askStream(
-      { question, history, docId },
+      {
+        question,
+        history,
+        sourceMode: activeMode,
+        appId: activeMode === 'records' ? selectedAppId || undefined : undefined,
+        docId: activeMode === 'knowledge' ? (allowSourceSelection ? selectedDocId || undefined : docId) : undefined,
+      },
       {
         signal: ctrl.signal,
         onSources: (s) => { patchLast({ sources: s }); scrollToEnd(); },
@@ -62,6 +132,71 @@ export function ChatPanel({ disabled, docId, fill }: { disabled?: boolean; docId
 
   return (
     <div className={fill ? 'flex flex-col h-full min-h-[360px]' : 'flex flex-col h-[calc(100vh-15rem)] min-h-[420px]'}>
+      {allowSourceSelection && (
+        <div className="mb-3 shrink-0 rounded-xl border border-border bg-surface-2/60 p-3">
+          <div className="flex items-end gap-2 flex-wrap">
+            <div className="min-w-56 flex-1">
+              <label className="label" htmlFor="ai-chat-source">参照範囲</label>
+              <select
+                id="ai-chat-source"
+                aria-label="参照範囲"
+                className="input"
+                value={selectedMode}
+                disabled={busy}
+                onChange={(e) => {
+                  setSelectedMode(e.target.value as ChatSourceMode);
+                  resetConversation();
+                }}
+              >
+                <option value="plain">参照なし（通常チャット）</option>
+                <option value="records">アプリデータのみ</option>
+                <option value="knowledge">ナレッジのみ</option>
+                <option value="both">アプリデータ＋ナレッジ</option>
+              </select>
+            </div>
+
+            {activeMode === 'records' && (
+              <div className="min-w-56 flex-1">
+                <label className="label" htmlFor="ai-chat-app">対象アプリ</label>
+                <select
+                  id="ai-chat-app"
+                  aria-label="対象アプリ"
+                  className="input"
+                  value={selectedAppId}
+                  disabled={busy}
+                  onChange={(e) => { setSelectedAppId(e.target.value); resetConversation(); }}
+                >
+                  <option value="">すべてのアプリ</option>
+                  {apps.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+            )}
+
+            {activeMode === 'knowledge' && (
+              <div className="min-w-56 flex-1">
+                <label className="label" htmlFor="ai-chat-knowledge">対象ナレッジ</label>
+                <select
+                  id="ai-chat-knowledge"
+                  aria-label="対象ナレッジ"
+                  className="input"
+                  value={selectedDocId}
+                  disabled={busy}
+                  onChange={(e) => { setSelectedDocId(e.target.value); resetConversation(); }}
+                >
+                  <option value="">すべてのナレッジ</option>
+                  {knowledge.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            現在：<span className="font-medium text-content">{scopeLabel}</span>
+            {activeMode === 'plain' ? '。社内データはAIへ送りません。' : '。回答後に参照元を表示します。'}
+            {' '}参照範囲を変えると新しい会話になります。
+          </p>
+        </div>
+      )}
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 pr-1">
         {turns.length === 0 && (
           <div className="h-full grid place-items-center text-center px-4">
@@ -69,11 +204,13 @@ export function ChatPanel({ disabled, docId, fill }: { disabled?: boolean; docId
               <div className="mx-auto grid place-items-center size-12 rounded-2xl bg-primary-soft text-primary-soft-fg mb-3">
                 <Sparkles className="size-6" />
               </div>
-              <p className="font-medium">蓄積されたデータに質問できます</p>
-              <p className="text-sm text-muted mt-1">レコードと登録文書を横断し、根拠を示して回答します。</p>
+              <p className="font-medium">{activeMode === 'plain' ? 'AIに相談できます' : '選択した社内データに質問できます'}</p>
+              <p className="text-sm text-muted mt-1">
+                {activeMode === 'plain' ? '現在はアプリデータやナレッジを参照しません。' : `${scopeLabel}を検索し、根拠を示して回答します。`}
+              </p>
               <div className="mt-4 flex flex-wrap gap-2 justify-center">
-                {SUGGESTIONS.map((s) => (
-                  <button key={s} className="btn btn-sm" onClick={() => send(s)} disabled={disabled}>{s}</button>
+                {SUGGESTIONS[activeMode].map((s) => (
+                  <button key={s} className="btn btn-sm" onClick={() => send(s)} disabled={activeDisabled}>{s}</button>
                 ))}
               </div>
             </div>
@@ -115,16 +252,18 @@ export function ChatPanel({ disabled, docId, fill }: { disabled?: boolean; docId
         <textarea
           className="input flex-1 resize-none min-h-[44px] max-h-32 py-2.5"
           rows={1}
-          placeholder={disabled ? 'ローカルLLMに接続できません' : '質問を入力…（Enterで送信 / Shift+Enterで改行）'}
+          placeholder={activeDisabled
+            ? (activeMode === 'plain' ? 'AIに接続できません' : 'この参照方法にはAIと埋め込みモデルの接続が必要です')
+            : '質問を入力…（Enterで送信 / Shift+Enterで改行）'}
           value={input}
-          disabled={disabled}
+          disabled={activeDisabled}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
         />
         {busy ? (
           <button type="button" className="btn btn-danger gap-1.5 shrink-0" onClick={stop}><Square className="size-4" />停止</button>
         ) : (
-          <button type="submit" className="btn btn-primary gap-1.5 shrink-0" disabled={disabled || !input.trim()}><Send className="size-4" />送信</button>
+          <button type="submit" className="btn btn-primary gap-1.5 shrink-0" disabled={activeDisabled || !input.trim()}><Send className="size-4" />送信</button>
         )}
       </form>
     </div>

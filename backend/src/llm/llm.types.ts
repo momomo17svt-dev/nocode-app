@@ -1,7 +1,13 @@
-// ローカルLLM（LM Studio 等の OpenAI 互換サーバ）接続設定。Setting キー 'llm.config' に保存する。
+// OpenAI互換LLM接続設定。Setting キー 'llm.config' に保存する。
+export type LlmProvider = 'lmstudio' | 'ollama' | 'openai' | 'openrouter' | 'groq' | 'gemini' | 'mistral' | 'custom';
+export type LlmApiKeyHeader = 'authorization' | 'api-key' | 'x-api-key';
+
 export interface LlmConfig {
   enabled: boolean;
+  provider: LlmProvider;
   baseUrl: string; // OpenAI互換のベースURL（例: http://localhost:1234/v1）
+  apiKey: string; // 外部API認証用。管理画面へは値を返さない。
+  apiKeyHeader: LlmApiKeyHeader;
   chatModel: string; // 空ならロード済みの先頭モデルを使用
   embedModel: string; // 埋め込み用モデル（RAG/検索に必須・チャットとは別物）
   temperature: number;
@@ -19,6 +25,11 @@ export interface LlmConfig {
   unloadPrevious: boolean; // 新モデルロード時に直前のモデルを解放する
   lmsPath: string; // lms CLI のパス（空＝CLIアンロード無効）
 }
+
+export type PublicLlmConfig = Omit<LlmConfig, 'apiKey'> & {
+  apiKey: '';
+  apiKeyConfigured: boolean;
+};
 
 /** OpenAI互換のマルチモーダルメッセージ部品（VLMへの画像入力用）。 */
 export interface ChatContentPart {
@@ -53,6 +64,7 @@ export interface QueueStatus {
 export interface LlmHealth {
   ok: boolean;
   enabled: boolean;
+  provider: LlmProvider;
   baseUrl: string;
   models: string[]; // 後方互換: モデルID一覧
   modelList: ModelInfo[]; // 種別・ロード状態つき
@@ -66,9 +78,75 @@ export interface LlmHealth {
 
 export const LLM_CONFIG_KEY = 'llm.config';
 
+export const LLM_PROVIDER_BASE_URLS: Record<Exclude<LlmProvider, 'custom'>, string> = {
+  lmstudio: 'http://localhost:1234/v1',
+  ollama: 'http://localhost:11434/v1',
+  openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  mistral: 'https://api.mistral.ai/v1',
+};
+
+const PROVIDERS = new Set<LlmProvider>([
+  'lmstudio', 'ollama', 'openai', 'openrouter', 'groq', 'gemini', 'mistral', 'custom',
+]);
+
+/** ベースURLのホストからプロバイダーを推測するための対応表。 */
+const PROVIDER_HOSTS: readonly [string, LlmProvider][] = [
+  ['api.openai.com', 'openai'],
+  ['openrouter.ai', 'openrouter'],
+  ['api.groq.com', 'groq'],
+  ['generativelanguage.googleapis.com', 'gemini'],
+  ['api.mistral.ai', 'mistral'],
+];
+
+/** ローカルLLMの既定ポート。 */
+const PROVIDER_PORTS: readonly [string, LlmProvider][] = [
+  ['11434', 'ollama'],
+  ['1234', 'lmstudio'],
+];
+
+/**
+ * プロバイダー名を決める。明示指定が有効ならそれを使い、無ければベースURLから推測する。
+ *
+ * 推測はホストとポートの完全一致で行う。部分一致だと
+ * `https://api.openai.com.example.net/` のような別ホストや、パスに `1234` を
+ * 含むだけのURLまで拾ってしまうため。
+ */
+export function normalizeProvider(value: unknown, baseUrl = ''): LlmProvider {
+  if (typeof value === 'string' && PROVIDERS.has(value as LlmProvider)) return value as LlmProvider;
+  if (!baseUrl) return 'lmstudio';
+
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return 'custom';
+  }
+  const host = parsed.hostname.toLowerCase();
+
+  const byPort = PROVIDER_PORTS.find(([port]) => parsed.port === port);
+  if (byPort && (host === 'localhost' || host === '127.0.0.1' || host === 'host.docker.internal')) {
+    return byPort[1];
+  }
+  const byHost = PROVIDER_HOSTS.find(([known]) => host === known || host.endsWith(`.${known}`));
+  if (byHost) return byHost[1];
+  if (byPort) return byPort[1];
+  return 'custom';
+}
+
+const envProvider = normalizeProvider(process.env.LLM_PROVIDER, process.env.LLM_BASE_URL || '');
+const envApiKeyHeader: LlmApiKeyHeader = ['api-key', 'x-api-key'].includes(process.env.LLM_API_KEY_HEADER || '')
+  ? process.env.LLM_API_KEY_HEADER as LlmApiKeyHeader
+  : 'authorization';
+
 export const DEFAULT_LLM_CONFIG: LlmConfig = {
   enabled: false,
-  baseUrl: process.env.LLM_BASE_URL || 'http://localhost:1234/v1',
+  provider: envProvider,
+  baseUrl: process.env.LLM_BASE_URL || LLM_PROVIDER_BASE_URLS[envProvider === 'custom' ? 'lmstudio' : envProvider],
+  apiKey: process.env.LLM_API_KEY || '',
+  apiKeyHeader: envApiKeyHeader,
   chatModel: '',
   embedModel: '',
   temperature: 0.3,

@@ -51,6 +51,26 @@ describe('ViewsController', () => {
       expect(service.remove).toHaveBeenCalledWith('v1');
     });
 
+    it('本人の専用ビューを共有へ昇格するには管理権限が要る', async () => {
+      service.getMeta.mockResolvedValue({ appId: 'app1', isShared: false, createdBy: 'u1' });
+      await controller.update('v1', { isShared: true } as any, user);
+      expect(permission.assert).toHaveBeenCalledWith('u1', 'StandardUser', 'app1', 'canManage');
+    });
+
+    it('管理権限がなければ共有への昇格は Forbidden（更新しない）', async () => {
+      service.getMeta.mockResolvedValue({ appId: 'app1', isShared: false, createdBy: 'u1' });
+      permission.assert.mockRejectedValue(new ForbiddenException());
+      await expect(controller.update('v1', { isShared: true } as any, user)).rejects.toThrow(ForbiddenException);
+      expect(service.update).not.toHaveBeenCalled();
+    });
+
+    it('本人の専用ビューを専用のまま変更するのは管理権限なしで可', async () => {
+      service.getMeta.mockResolvedValue({ appId: 'app1', isShared: false, createdBy: 'u1' });
+      await controller.update('v1', { name: 'x', isShared: false } as any, user);
+      expect(permission.assert).not.toHaveBeenCalled();
+      expect(service.update).toHaveBeenCalledWith('v1', { name: 'x', isShared: false });
+    });
+
     it('SystemAdmin は他人の専用ビューも操作できる', async () => {
       service.getMeta.mockResolvedValue({ appId: 'app1', isShared: false, createdBy: 'other' });
       await controller.remove('v1', { userId: 'admin', role: 'SystemAdmin' } as any);

@@ -58,7 +58,7 @@ describe('Records lifecycle (e2e)', () => {
     const updated = await request(http())
       .put(`/api/records/${id}`)
       .set(bearer(token))
-      .send({ data: { qty: 3, no: 'HACK' } })
+      .send({ data: { qty: 3, no: 'HACK' }, expectedVersion: created.body.version })
       .expect(200);
     expect(updated.body.dataJson.total).toBe(150); // 再計算
     expect(updated.body.dataJson.no).toBe('INV-0001'); // 採番は保持
@@ -85,6 +85,30 @@ describe('Records lifecycle (e2e)', () => {
       .expect(200);
     expect(filtered.body).toHaveLength(1);
     expect(filtered.body[0].dataJson.title).toBe('みかん');
+  });
+
+  it('一覧をDB側で検索・条件指定・並び替え・ページ分割する', async () => {
+    await create({ title: '青森りんご', qty: 3, price: 100 }).expect(201);
+    await create({ title: '長野りんご', qty: 8, price: 120 }).expect(201);
+    await create({ title: 'みかん', qty: 20, price: 80 }).expect(201);
+
+    const response = await request(http())
+      .get('/api/records')
+      .query({
+        appId,
+        page: 1,
+        pageSize: 1,
+        search: 'りんご',
+        conditions: JSON.stringify([{ field: 'qty', op: 'gt', value: '2' }]),
+        sortField: 'qty',
+        sortOrder: 'desc',
+      })
+      .set(bearer(token))
+      .expect(200);
+
+    expect(response.body).toMatchObject({ total: 2, page: 1, pageSize: 1, totalPages: 2 });
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].dataJson.title).toBe('長野りんご');
   });
 
   it('削除すると一覧から消える', async () => {

@@ -17,7 +17,7 @@ const USER_CSV_COLUMNS: CsvColumn[] = [
   { key: 'loginId', label: 'ID', required: true, aliases: ['loginId', 'ID', 'ログインID', 'ユーザーID'] },
   { key: 'name', label: 'ユーザー名', aliases: ['name', 'ユーザー名', '氏名', '名前'], hint: '任意（未指定はIDで表示）' },
   { key: 'group', label: '所属部署', aliases: ['group', '所属部署', '部署', '部署名'], hint: '部署名で指定（任意・未指定は未所属）。先に部署を取り込んでおくこと' },
-  { key: 'password', label: 'パスワード', required: true, aliases: ['password'], hint: '8文字以上' },
+  { key: 'password', label: 'パスワード', required: true, aliases: ['password'], hint: '管理者が設定した最低文字数以上' },
   {
     key: 'role',
     label: 'ロール',
@@ -25,7 +25,7 @@ const USER_CSV_COLUMNS: CsvColumn[] = [
     hint: 'システム管理者 / アプリ作成者 / 一般ユーザー / 閲覧ユーザー（未指定は一般ユーザー）',
   },
 ];
-const temporaryPassword = () => `Temp-${crypto.randomUUID().slice(0, 12)}!`;
+const temporaryPassword = () => `Temp-${crypto.randomUUID()}-${crypto.randomUUID()}!`;
 const USER_CSV_SAMPLE = [
   ['tanaka', '田中 太郎', '営業部', temporaryPassword(), '一般ユーザー'],
   ['suzuki', '鈴木 花子', '国内営業課', temporaryPassword(), 'アプリ作成者'],
@@ -50,6 +50,11 @@ export function UsersAdmin() {
   const isGroupAdmin = getUser()?.role === 'GroupAdmin';
   const roleOptions = isGroupAdmin ? ROLES.filter((r) => r !== 'SystemAdmin') : ROLES;
   const [resetPw, setResetPw] = useState('');
+  const [passwordMinLength, setPasswordMinLength] = useState(8);
+
+  useEffect(() => {
+    api.get<{ minLength: number }>('/auth/password-policy').then((policy) => setPasswordMinLength(policy.minLength)).catch(() => undefined);
+  }, []);
 
   const load = (p = page) => {
     setLoading(true);
@@ -80,7 +85,7 @@ export function UsersAdmin() {
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const create = async () => {
-    if (!form.loginId || form.password.length < 8) { toast.error('ログインIDとパスワード(8文字以上)を入力してください'); return; }
+    if (!form.loginId || form.password.length < passwordMinLength) { toast.error(`ログインIDとパスワード(${passwordMinLength}文字以上)を入力してください`); return; }
     if (isGroupAdmin && !form.groupId) { toast.error('所属部署を選択してください'); return; }
     try {
       await api.post('/users', {
@@ -118,7 +123,7 @@ export function UsersAdmin() {
     try { await api.put(`/users/${u.id}`, { isActive: !u.isActive }); load(); } catch (e: any) { toast.error(e.message); }
   };
   const submitReset = async () => {
-    if (resetPw.length < 8) { toast.error('パスワードは8文字以上にしてください'); return; }
+    if (resetPw.length < passwordMinLength) { toast.error(`パスワードは${passwordMinLength}文字以上にしてください`); return; }
     try {
       await api.put(`/users/${resetTarget.id}`, { password: resetPw });
       toast.success('パスワードを更新しました');
@@ -151,7 +156,7 @@ export function UsersAdmin() {
             <input className="input" placeholder="ユーザー名" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </Field>
           <Field label="パスワード" className="flex-1 min-w-40">
-            <input className="input" type="password" placeholder="8文字以上" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <input className="input" type="password" placeholder={`${passwordMinLength}文字以上`} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </Field>
           <Field label="ロール">
             <select className="input w-auto" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
@@ -273,11 +278,11 @@ export function UsersAdmin() {
         footer={
           <>
             <Button onClick={() => setResetTarget(null)}>キャンセル</Button>
-            <Button variant="primary" onClick={submitReset} disabled={resetPw.length < 8}>更新</Button>
+            <Button variant="primary" onClick={submitReset} disabled={resetPw.length < passwordMinLength}>更新</Button>
           </>
         }
       >
-        <Field label="新しいパスワード（8文字以上）">
+        <Field label={`新しいパスワード（${passwordMinLength}文字以上）`}>
           <input
             className="input"
             type="password"

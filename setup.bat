@@ -24,7 +24,11 @@ if errorlevel 1 (
 
 if not exist "%PG_BIN%\postgres.exe" (
     echo [ERROR] PostgreSQL not found at "%PG_BIN%".
-    echo   Run extract-postgresql.bat first ^(unpacks postgresql.zip into .\pgsql^).
+    echo   PostgreSQL is not bundled with this repository. Do one of:
+    echo     - Install PostgreSQL 16+ and set NOCODEAPP_PG_HOME to its root folder
+    echo     - Extract portable Windows binaries into .\pgsql ^(pgsql\bin\postgres.exe^)
+    echo     - Offline distributions only: run extract-postgresql.bat
+    echo   See docs\setup-guide.md for download links.
     pause
     exit /b 1
 )
@@ -32,7 +36,9 @@ if not exist "%PG_BIN%\postgres.exe" (
 echo [1/8] Checking data directory...
 if not exist "%PG_DATA%\PG_VERSION" (
     echo     Initializing PostgreSQL data dir...
-    "%PG_BIN%\initdb" -D "%PG_DATA%" -U postgres --encoding=UTF8 --no-locale
+    rem SQL_ASCII is used only for the cluster templates because initdb rejects a
+    rem Japanese project path as invalid UTF-8. The application DB below is UTF-8.
+    "%PG_BIN%\initdb" -D "%PG_DATA%" -U postgres --encoding=SQL_ASCII --no-locale
 )
 
 echo [2/8] Starting PostgreSQL...
@@ -61,7 +67,7 @@ set "_dbexists="
 if not errorlevel 1 set "_dbexists=1"
 if not defined _dbexists (
     echo     Creating database...
-    "%PG_BIN%\psql" -U postgres -h 127.0.0.1 -c "CREATE DATABASE nocode_db"
+    "%PG_BIN%\psql" -U postgres -h 127.0.0.1 -c "CREATE DATABASE nocode_db WITH ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C'"
 ) else (
     echo     Already exists.
 )

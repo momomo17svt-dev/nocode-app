@@ -4,6 +4,7 @@ import { Clock, Maximize2, Minimize2, RefreshCw, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { WidgetView } from '../components/dashboard/WidgetView';
 import { sizeSpan, type DashboardDef, type Widget } from '../lib/dashboard';
+import { getLocale } from '../lib/i18n';
 
 /**
  * 状況把握ボード（サイネージ / キオスク表示）。
@@ -55,7 +56,7 @@ export function Board() {
   };
 
   // 選択ボードが変わったら再算出
-  useEffect(() => { setData({}); load(current);   }, [curId, dashboards]);
+  useEffect(() => { setData({}); load(current); }, [current]);
 
   // 定期更新
   useEffect(() => {
@@ -115,10 +116,10 @@ export function Board() {
         <div className="flex-1" />
         <div className="hidden items-center gap-1.5 text-sm tabular-nums text-muted sm:flex">
           <Clock className="size-4" />
-          <span>{now.toLocaleString('ja-JP', { hour12: false })}</span>
+          <span>{now.toLocaleString(getLocale(), { hour12: false })}</span>
         </div>
         {updatedAt && (
-          <span className="hidden text-xs text-muted md:inline">更新 {updatedAt.toLocaleTimeString('ja-JP', { hour12: false })}</span>
+          <span className="hidden text-xs text-muted md:inline">更新 {updatedAt.toLocaleTimeString(getLocale(), { hour12: false })}</span>
         )}
         <button className="btn btn-ghost btn-icon btn-sm" onClick={() => load(current)} title="今すぐ更新"><RefreshCw className="size-4" /></button>
         <button className="btn btn-ghost btn-icon btn-sm" onClick={toggleFull} title={isFull ? '全画面を終了' : '全画面'}>

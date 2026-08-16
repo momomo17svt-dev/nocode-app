@@ -18,6 +18,7 @@ describe('AppsController', () => {
       setStatus: jest.fn().mockResolvedValue({ id: 'app1' }),
       remove: jest.fn().mockResolvedValue({ id: 'app1' }),
       duplicate: jest.fn().mockResolvedValue({ id: 'app2' }),
+      createFromSuite: jest.fn().mockResolvedValue({ apps: [{ id: 'app1', name: '顧客マスタ' }] }),
     };
     permission = { assert: jest.fn().mockResolvedValue({ canManage: true, canView: true }) };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
@@ -43,6 +44,22 @@ describe('AppsController', () => {
     it('アプリを作成し監査記録する', async () => {
       await controller.create({ name: 'A' } as any, user, req);
       expect(service.create).toHaveBeenCalledWith({ name: 'A' }, 'u1');
+      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'APP_CREATE' }));
+    });
+  });
+
+  describe('createFromSuite', () => {
+    it('重複作成の明示確認をサービスへ渡す', async () => {
+      await controller.createFromSuite(
+        { suiteId: 'crm', withSamples: true, allowDuplicate: true },
+        user,
+        req,
+      );
+      expect(service.createFromSuite).toHaveBeenCalledWith(
+        'crm',
+        { withSamples: true, allowDuplicate: true },
+        'u1',
+      );
       expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'APP_CREATE' }));
     });
   });

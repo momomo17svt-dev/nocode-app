@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AppsService } from './apps.service';
 
 describe('AppsService', () => {
@@ -51,6 +51,20 @@ describe('AppsService', () => {
     it('存在しなければ NotFound', async () => {
       prisma.app.findUnique.mockResolvedValue(null);
       await expect(service.findOne('missing')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('createFromSuite', () => {
+    it('同じ連携アプリ群が存在する場合は確認なしの重複作成を止める', async () => {
+      prisma.app.findMany.mockResolvedValue([
+        { name: '顧客マスタ' },
+        { name: '商談管理' },
+        { name: '見積管理' },
+        { name: '請求管理' },
+      ]);
+
+      await expect(service.createFromSuite('crm', {}, 'u1')).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.app.create).not.toHaveBeenCalled();
     });
   });
 

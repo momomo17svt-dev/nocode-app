@@ -1,47 +1,54 @@
-# API設計 (API Design)
-
-バックエンドはRESTful APIを提供する。すべてのエンドポイント（認証系を除く）において、認証トークン（JWT等）の検証および認可チェックを必須とする。
+# API設計
 
 ## 共通仕様
-- Base Path: `/api/v1`
-- Content-Type: `application/json` (ファイルアップロード時は `multipart/form-data`)
 
-## エンドポイント一覧
+- Base path: `/api`
+- JSON、ファイル時は`multipart/form-data`
+- 認証: `nocode_session` HttpOnly Cookie、またはBearer JWT
+- Cookie認証によるPOST/PUT/DELETE: `X-CSRF-Token`必須
+- エラー: HTTP状態コードと`message`
+- 応答ヘッダー: `X-Request-Id`
 
-### 1. 認証 (Auth)
-- `POST /auth/login` : ログイン
-- `POST /auth/logout` : ログアウト
-- `PUT /auth/password` : パスワード変更
+## 主なエンドポイント
 
-### 2. ユーザー・グループ管理 (User/Group)
-- `GET /users`, `POST /users`, `PUT /users/:id`, `DELETE /users/:id`
-- `GET /groups`, `POST /groups`, `PUT /groups/:id`, `DELETE /groups/:id`
+- `POST /auth/login`, `POST /auth/logout`, `GET /auth/profile`, `POST /auth/change-password`
+- `GET|POST /apps`, `GET|PUT|DELETE /apps/:id`, `POST /apps/:id/duplicate`
+- `GET|POST|PUT|DELETE /fields`, `/views`, `/app-permissions`
+- `GET|POST /records`, `GET|PUT|DELETE /records/:id`
+- `POST /records/import`, `GET /records/export/csv`
+- `GET|POST|DELETE /attachments`
+- `/directory/users`, `/directory/groups`, `/groups`
+- `/dashboards`, `/notifications`, `/portal`, `/audit-logs`
+- `/llm`, `/ai`, `/public/forms`
 
-### 3. アプリ管理 (App)
-- `GET /apps` : アプリ一覧取得
-- `POST /apps` : アプリ作成
-- `GET /apps/:id` : アプリ詳細取得
-- `PUT /apps/:id` : アプリ編集
-- `DELETE /apps/:id` : アプリ削除
-- `POST /apps/:id/duplicate` : アプリ複製
+## レコード一覧
 
-### 4. アプリ定義・権限
-- `GET /apps/:id/fields`, `PUT /apps/:id/fields` : フィールド定義の取得・更新
-- `GET /apps/:id/permissions`, `PUT /apps/:id/permissions` : 公開範囲・権限設定
-- `GET /apps/:id/views`, `POST /apps/:id/views`, `PUT /apps/:id/views/:viewId`, `DELETE /apps/:id/views/:viewId`
+`GET /api/records?appId=...`
 
-### 5. レコード操作 (Record)
-- `GET /apps/:id/records` : レコード一覧（検索・絞り込み）
-- `POST /apps/:id/records` : レコード新規作成
-- `GET /apps/:id/records/:recordId` : レコード詳細
-- `PUT /apps/:id/records/:recordId` : レコード更新
-- `DELETE /apps/:id/records/:recordId` : レコード削除
+従来互換の全件配列を返します。可視化タブで使用します。
 
-### 6. ファイル・CSV
-- `POST /attachments/upload` : 添付ファイルアップロード
-- `GET /attachments/:id/download` : ファイルダウンロード
-- `POST /apps/:id/records/export` : CSVエクスポート
-- `POST /apps/:id/records/import` : CSVインポート
+`GET /api/records?appId=...&page=1&pageSize=50`
 
-### 7. 監査ログ
-- `GET /audit-logs` : 監査ログ取得（システム管理者のみ）
+一覧タブ用で、次を返します。
+
+```json
+{ "items": [], "total": 0, "page": 1, "pageSize": 50, "totalPages": 1 }
+```
+
+追加クエリは`search`、`conditions`（JSON、最大20条件）、`sortField`、`sortOrder=asc|desc`です。`pageSize`の上限は100です。権限による作成者/組織/対象社員範囲は常にサーバー側で適用されます。
+
+## 監査ログ
+
+`GET /api/audit-logs?page=1&pageSize=50`
+
+システム管理者だけが利用できます。新しいログから順に、レコード一覧と同じページ情報を返します。`pageSize`の上限は100です。
+
+```json
+{ "items": [], "total": 0, "page": 1, "pageSize": 50, "totalPages": 1 }
+```
+
+## LLM設定
+
+`GET /api/llm/config`は接続設定を返しますが、保存済みAPIキー本体は返しません。`apiKey`は常に空文字、`apiKeyConfigured`は登録有無です。
+
+`PUT /api/llm/config`では、同じプロバイダーのまま空の`apiKey`を送ると既存キーを維持します。キーを消す場合は`clearApiKey: true`を送ります。プロバイダー変更時は、旧キーの誤送信を避けるため、新しいキーを同時指定しない限り既存キーを破棄します。対応する`provider`は`lmstudio`、`ollama`、`openai`、`openrouter`、`groq`、`gemini`、`mistral`、`custom`です。`custom`ではBearer、`api-key`、`x-api-key`の認証ヘッダーを選べます。

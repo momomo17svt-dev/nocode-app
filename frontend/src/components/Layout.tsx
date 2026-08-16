@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Zap,
   Search,
+  Settings,
 } from 'lucide-react';
 import { getUser, logout, roleLabel, isAdmin, canManageDirectory, userDisplay } from '../lib/auth';
 import { api } from '../lib/api';
@@ -27,6 +28,7 @@ import { cn } from '../lib/cn';
 import { NotificationBell } from './NotificationBell';
 import { CommandPalette } from './CommandPalette';
 import { APP_NAME } from '../config/branding';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 interface NavItem {
   to: string;
@@ -115,6 +117,7 @@ export function Layout({ children }: { children: ReactNode }) {
     items.push(
       { to: '/admin/ai', label: 'AI設定', icon: <BrainCircuit className="size-[18px]" />, match: (p) => p.startsWith('/admin/ai') },
       { to: '/admin/audit', label: '監査ログ', icon: <ScrollText className="size-[18px]" />, match: (p) => p.startsWith('/admin/audit') },
+      { to: '/admin/system', label: 'システム設定', icon: <Settings className="size-[18px]" />, match: (p) => p.startsWith('/admin/system') },
     );
   }
 
@@ -197,30 +200,38 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
           <div className="flex-1" />
 
+          <LanguageSwitcher compact className="hidden sm:inline-flex" />
+
           <NotificationBell />
 
           <button className="btn btn-ghost btn-icon" onClick={onToggleTheme} aria-label="テーマ切替" title="テーマ切替">
             {theme === 'dark' ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
           </button>
 
-          <div className="relative">
-            <button className="btn btn-ghost gap-2" onClick={() => setMenu((m) => !m)}>
-              <span className="grid place-items-center size-7 rounded-full bg-primary-soft text-primary-soft-fg text-xs font-bold">
+          <div className="relative shrink-0">
+            <button className="btn btn-ghost gap-2 min-w-0 max-w-[13rem]" onClick={() => setMenu((m) => !m)}>
+              <span
+                className="grid place-items-center size-7 shrink-0 overflow-hidden rounded-full bg-primary-soft text-primary-soft-fg text-xs font-bold"
+                data-i18n-ignore
+              >
                 {(userDisplay(user) || '?').slice(0, 2).toUpperCase()}
               </span>
-              <span className="hidden sm:flex flex-col items-start leading-tight">
-                <span className="text-[13px] font-semibold">{userDisplay(user)}</span>
-                <span className="text-[11px] text-muted font-normal">{roleLabel(user?.role || '')}</span>
+              <span className="hidden lg:flex min-w-0 max-w-40 flex-col items-start leading-tight">
+                <span className="w-full truncate text-[13px] font-semibold">{userDisplay(user)}</span>
+                <span className="w-full truncate text-[11px] text-muted font-normal">{roleLabel(user?.role || '')}</span>
               </span>
-              <ChevronDown className="size-4 text-muted" />
+              <ChevronDown className="size-4 shrink-0 text-muted" />
             </button>
             {menu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
                 <div className="absolute right-0 mt-2 w-52 card p-1.5 z-50 animate-pop-in shadow-[var(--shadow-pop)]">
-                  <div className="px-3 py-2 sm:hidden">
-                    <div className="text-sm font-semibold">{userDisplay(user)}</div>
-                    <div className="text-xs text-muted">{roleLabel(user?.role || '')}</div>
+                  <div className="px-3 py-2 lg:hidden">
+                    <div className="truncate text-sm font-semibold">{userDisplay(user)}</div>
+                    <div className="truncate text-xs text-muted">{roleLabel(user?.role || '')}</div>
+                  </div>
+                  <div className="px-3 py-2 sm:hidden border-t border-border">
+                    <LanguageSwitcher compact />
                   </div>
                   <Link
                     to="/account/password"

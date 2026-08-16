@@ -40,7 +40,7 @@ export class ViewsController {
 
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateViewDto, @CurrentUser() user: AuthUser) {
-    await this.authorizeMutate(id, user);
+    await this.authorizeMutate(id, user, dto.isShared);
     return this.viewsService.update(id, dto);
   }
 
@@ -50,10 +50,15 @@ export class ViewsController {
     return this.viewsService.remove(id);
   }
 
-  /** 共有ビューは管理権限、専用ビューは作成者本人のみ変更/削除可。 */
-  private async authorizeMutate(id: string, user: AuthUser) {
+  /**
+   * 共有ビューは管理権限、専用ビューは作成者本人のみ変更/削除可。
+   * 専用→共有への昇格(nextShared=true)も管理権限を要求する。
+   * 更新前の状態だけで判定すると、閲覧権限しかない利用者が
+   * 「専用ビューを作る→共有に切り替える」で共有ビューを作れてしまうため。
+   */
+  private async authorizeMutate(id: string, user: AuthUser, nextShared?: boolean) {
     const meta = await this.viewsService.getMeta(id);
-    if (meta.isShared) {
+    if (meta.isShared || nextShared === true) {
       await this.permission.assert(user.userId, user.role, meta.appId, 'canManage');
     } else if (meta.createdBy !== user.userId && user.role !== 'SystemAdmin') {
       throw new ForbiddenException('このビューを操作する権限がありません');

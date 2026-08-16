@@ -12,6 +12,18 @@ if exist "%~dp0pgsql\bin\postgres.exe" (
 )
 if not exist "%~dp0postgresql.zip" (
     echo [ERROR] postgresql.zip not found next to this script.
+    echo.
+    echo   This script is only for offline distributions that ship postgresql.zip.
+    echo   A git clone does NOT include it - PostgreSQL is not part of this repository.
+    echo.
+    echo   To run without Docker, do ONE of the following instead:
+    echo     1. Install PostgreSQL 16 or later normally, or
+    echo     2. Download the portable Windows x86-64 binaries zip from
+    echo        https://www.enterprisedb.com/download-postgresql-binaries
+    echo        and extract it here so that .\pgsql\bin\postgres.exe exists.
+    echo.
+    echo   PostgreSQL elsewhere on disk: set NOCODEAPP_PG_HOME to its root folder.
+    echo   See docs\setup-guide.md for details.
     pause
     exit /b 1
 )

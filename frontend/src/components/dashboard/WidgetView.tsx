@@ -6,6 +6,7 @@ import { StatusPill } from '../ui/StatusPill';
 import { Avatar } from '../ui/Avatar';
 import { Skeleton } from '../ui/Skeleton';
 import { MAP_HEIGHT_CLASS, WIDGET_TYPE_LABELS, widgetHeight, type Widget } from '../../lib/dashboard';
+import { getLocale } from '../../lib/i18n';
 
 interface Props {
   widget: Widget;
@@ -78,7 +79,7 @@ function KpiBody({ data }: { data: any }) {
     <div className="h-full flex flex-col justify-center py-2">
       <div className="flex items-end gap-1.5">
         <span className={`text-4xl font-bold leading-none tabular-nums ${data?.accent ? 'text-warning' : ''}`}>
-          {typeof data?.value === 'number' ? data.value.toLocaleString('ja-JP') : '—'}
+          {typeof data?.value === 'number' ? data.value.toLocaleString(getLocale()) : '—'}
         </span>
         {data?.suffix && <span className="text-sm text-muted font-medium mb-0.5">{data.suffix}</span>}
       </div>
@@ -126,7 +127,7 @@ function ListBody({ data, onOpen }: { data: any; onOpen: (id: string) => void })
         </tbody>
       </table>
       {typeof data?.total === 'number' && data.total > rows.length && (
-        <div className="text-[11px] text-muted mt-1.5 px-1.5">全 {data.total.toLocaleString('ja-JP')} 件中 {rows.length} 件を表示</div>
+        <div className="text-[11px] text-muted mt-1.5 px-1.5">全 {data.total.toLocaleString(getLocale())} 件中 {rows.length} 件を表示</div>
       )}
     </div>
   );
@@ -147,7 +148,7 @@ function MapBody({ data, onOpen }: { data: any; onOpen: (id: string) => void }) 
   return (
     <div className="h-full flex flex-col gap-1.5">
       <MapView markers={markers} fitToMarkers center={data?.center} zoom={data?.zoom} className="flex-1 min-h-0" />
-      <div className="text-[11px] text-muted px-0.5 shrink-0">{markers.length.toLocaleString('ja-JP')} 件をピン表示（クリックで開く）</div>
+      <div className="text-[11px] text-muted px-0.5 shrink-0">{markers.length.toLocaleString(getLocale())} 件をピン表示（クリックで開く）</div>
     </div>
   );
 }

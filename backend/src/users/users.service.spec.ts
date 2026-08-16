@@ -6,6 +6,7 @@ jest.mock('bcrypt');
 
 describe('UsersService', () => {
   let prisma: any;
+  let settings: any;
   let service: UsersService;
 
   beforeEach(() => {
@@ -21,7 +22,8 @@ describe('UsersService', () => {
       app: { findMany: jest.fn().mockResolvedValue([]) },
       record: { groupBy: jest.fn().mockResolvedValue([]) },
     };
-    service = new UsersService(prisma);
+    settings = { authPolicyCached: jest.fn().mockReturnValue({ passwordMinLength: 8 }) };
+    service = new UsersService(prisma, settings);
     (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-pw');
     jest.clearAllMocks();
     (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-pw');

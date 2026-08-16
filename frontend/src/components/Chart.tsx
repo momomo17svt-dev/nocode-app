@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { paletteColor } from '../lib/colors';
+import { getLocale } from '../lib/i18n';
 
 export interface ChartDatum {
   label: string;
@@ -18,7 +19,7 @@ export function Chart({ type, data, valueLabel }: { type: ChartType; data: Chart
   return <BarChart data={data} valueLabel={valueLabel} />;
 }
 
-const fmt = (n: number) => n.toLocaleString('ja-JP');
+const fmt = (n: number) => n.toLocaleString(getLocale());
 
 /* ===== ホバーツールチップ ===== */
 function useTip() {

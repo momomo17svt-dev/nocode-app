@@ -9,5 +9,6 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
   imports: [PrismaModule, PermissionsModule, AuditLogsModule],
   providers: [AttachmentsService],
   controllers: [AttachmentsController],
+  exports: [AttachmentsService],
 })
 export class AttachmentsModule {}

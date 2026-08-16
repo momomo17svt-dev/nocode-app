@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { Button } from '../components/ui/Button';
 import { Field } from '../components/ui/Field';
 import { APP_NAME } from '../config/branding';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
 
 export function Login() {
   const [loginId, setLoginId] = useState('');
@@ -18,8 +19,7 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
-      const data = await api.post('/auth/login', { loginId, password });
-      localStorage.setItem('token', data.access_token);
+      const data = await api.post<{ user: Record<string, unknown> }>('/auth/login', { loginId, password });
       localStorage.setItem('user', JSON.stringify(data.user));
       navigate('/');
     } catch (err: any) {
@@ -31,6 +31,7 @@ export function Login() {
 
   return (
     <div className="min-h-screen grid place-items-center p-4 bg-canvas relative overflow-hidden">
+      <LanguageSwitcher className="absolute right-4 top-4 z-10" />
       {/* 背景の装飾 */}
       <div className="pointer-events-none absolute -top-32 -left-24 size-96 rounded-full bg-primary/15 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-32 -right-24 size-96 rounded-full bg-primary/10 blur-3xl" />
@@ -48,6 +49,7 @@ export function Login() {
           <Field label="ログインID">
             <input
               type="text"
+              aria-label="ログインID"
               className="input"
               value={loginId}
               onChange={(e) => setLoginId(e.target.value)}
@@ -58,6 +60,7 @@ export function Login() {
           <Field label="パスワード">
             <input
               type="password"
+              aria-label="パスワード"
               className="input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

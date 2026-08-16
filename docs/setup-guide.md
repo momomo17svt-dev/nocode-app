@@ -19,11 +19,19 @@
 - PostgreSQL 16以降
 - npm依存関係を取得できる環境、または事前に作成したオフライン配布物
 
-ポータブルPostgreSQLはプロジェクト直下の`pgsql/`へ配置します。別の場所にある場合は、起動前に`NOCODEAPP_PG_HOME`へPostgreSQLのルートディレクトリを設定してください。
+**PostgreSQL本体はこのリポジトリに含まれていません。** ライセンスと容量の都合で、ソース配布物からは除外しています。次のいずれかを用意してください。
+
+- 通常のインストーラー版PostgreSQL 16以降を使う
+- ポータブル版（EnterpriseDBの「Windows x86-64 binaries」zipなど）を各自でダウンロードする
+  - <https://www.enterprisedb.com/download-postgresql-binaries>
+
+ポータブル版はプロジェクト直下の`pgsql/`へ展開します（`pgsql\bin\postgres.exe`が存在する形）。別の場所へ置く場合は、起動前に`NOCODEAPP_PG_HOME`へPostgreSQLのルートディレクトリを設定してください。
 
 ```powershell
 $env:NOCODEAPP_PG_HOME = 'C:\path\to\postgresql'
 ```
+
+`extract-postgresql.bat`は、オフライン配布用に`postgresql.zip`を同梱した配布物向けの補助スクリプトです。Gitからcloneした場合はこのzipが無いため、上記のいずれかで`pgsql/`を用意してください。
 
 ### 初回セットアップ
 

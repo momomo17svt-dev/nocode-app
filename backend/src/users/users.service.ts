@@ -1,6 +1,7 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { SettingsService } from '../system-settings/settings.service';
 
 const VALID_ROLES = ['SystemAdmin', 'GroupAdmin', 'AppCreator', 'StandardUser', 'Viewer'];
 /** CSV取込で日本語ロール名でも指定できるようにするための対応表。 */
@@ -38,7 +39,7 @@ const ANON_USER_ID = 'anonymous';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private settings: SettingsService) {}
 
   async findAll() {
     return this.prisma.user.findMany({
@@ -110,8 +111,9 @@ export class UsersService {
     if (data.role && !VALID_ROLES.includes(data.role)) {
       throw new BadRequestException('不正なロールです');
     }
-    if (!data.password || data.password.length < 8) {
-      throw new BadRequestException('パスワードは8文字以上にしてください');
+    const minLength = this.settings.authPolicyCached().passwordMinLength;
+    if (!data.password || data.password.length < minLength) {
+      throw new BadRequestException(`パスワードは${minLength}文字以上にしてください`);
     }
     const existing = await this.prisma.user.findUnique({ where: { loginId: data.loginId } });
     if (existing) {
@@ -146,10 +148,14 @@ export class UsersService {
     // 所属部署の変更/解除（空文字/null=未所属）。
     if (data.groupId !== undefined) updateData.groupId = data.groupId || null;
     if (data.password) {
-      if (data.password.length < 8) {
-        throw new BadRequestException('パスワードは8文字以上にしてください');
+      const minLength = this.settings.authPolicyCached().passwordMinLength;
+      if (data.password.length < minLength) {
+        throw new BadRequestException(`パスワードは${minLength}文字以上にしてください`);
       }
       updateData.passwordHash = await bcrypt.hash(data.password, 10);
+    }
+    if (data.password || data.role !== undefined || data.isActive !== undefined) {
+      updateData.authVersion = { increment: 1 };
     }
     try {
       return await this.prisma.user.update({
@@ -166,7 +172,7 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(newPassword, 10);
     return this.prisma.user.update({
       where: { id },
-      data: { passwordHash },
+      data: { passwordHash, authVersion: { increment: 1 } },
       select: SAFE_SELECT,
     });
   }

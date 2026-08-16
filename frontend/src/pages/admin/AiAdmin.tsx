@@ -7,10 +7,49 @@ import { Button } from '../../components/ui/Button';
 import { Field } from '../../components/ui/Field';
 import { useToast } from '../../components/ui/Toast';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
-import { aiApi, type LlmConfig, type IndexStatus, type LlmHealth, type ModelInfo } from '../../lib/ai';
+import {
+  aiApi,
+  type LlmConfig,
+  type LlmProvider,
+  type IndexStatus,
+  type LlmHealth,
+  type ModelInfo,
+} from '../../lib/ai';
 import { LlmStatusBadge } from '../../components/ai/LlmStatusBadge';
 
 interface AppLite { id: string; name: string }
+
+const PROVIDERS: { value: LlmProvider; label: string }[] = [
+  { value: 'lmstudio', label: 'LM Studio' },
+  { value: 'ollama', label: 'Ollama' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'openrouter', label: 'OpenRouter' },
+  { value: 'groq', label: 'Groq' },
+  { value: 'gemini', label: 'Google Gemini' },
+  { value: 'mistral', label: 'Mistral' },
+  { value: 'custom', label: 'その他（OpenAI互換）' },
+];
+
+const CLOUD_BASE_URLS: Partial<Record<LlmProvider, string>> = {
+  openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  mistral: 'https://api.mistral.ai/v1',
+};
+
+function providerBaseUrl(provider: LlmProvider, current: string): string {
+  if (CLOUD_BASE_URLS[provider]) return CLOUD_BASE_URLS[provider] as string;
+  if (provider === 'custom') return current;
+  let host = 'localhost';
+  try {
+    const parsed = new URL(current);
+    if (['localhost', '127.0.0.1', 'host.docker.internal'].includes(parsed.hostname)) host = parsed.hostname;
+  } catch {
+    // 現在値がURLでない場合はlocalhostを使う。
+  }
+  return `http://${host}:${provider === 'ollama' ? '11434' : '1234'}/v1`;
+}
 
 export function AiAdmin() {
   const toast = useToast();
@@ -22,6 +61,7 @@ export function AiAdmin() {
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const [loadingKind, setLoadingKind] = useState<'chat' | 'embed' | null>(null);
+  const [clearApiKey, setClearApiKey] = useState(false);
 
   const loadStatus = () => aiApi.status().then(setStatus).catch(() => setStatus(null));
 
@@ -50,19 +90,36 @@ export function AiAdmin() {
 
   const patch = (p: Partial<LlmConfig>) => setCfg((c) => (c ? { ...c, ...p } : c));
 
-  // 用途別のモデル候補（LM Studio から取得した種別で振り分け）
+  // 用途別のモデル候補（接続先の /models から取得した種別で振り分け）
   const list: ModelInfo[] = health?.modelList || [];
   const isEmbed = (m: ModelInfo) => m.type === 'embeddings' || (m.type === 'unknown' && /embed/i.test(m.id));
   const chatModels = list.filter((m) => !isEmbed(m));
   const embedModels = list.filter((m) => isEmbed(m));
-  const optLabel = (m: ModelInfo) => `${m.id}${m.loaded ? '（ロード済み）' : ''}`;
+
+  const changeProvider = (provider: LlmProvider) => {
+    if (!cfg) return;
+    const providerChanged = provider !== cfg.provider;
+    patch({
+      provider,
+      baseUrl: providerBaseUrl(provider, cfg.baseUrl),
+      apiKey: '',
+      apiKeyConfigured: providerChanged ? false : cfg.apiKeyConfigured,
+      chatModel: '',
+      embedModel: '',
+      autoLoadModel: provider === 'lmstudio',
+      unloadPrevious: provider === 'lmstudio',
+      apiKeyHeader: 'authorization',
+    });
+    setClearApiKey(providerChanged && cfg.apiKeyConfigured);
+  };
 
   const save = async () => {
     if (!cfg) return;
     setSaving(true);
     try {
-      const saved = await aiApi.saveConfig(cfg);
+      const saved = await aiApi.saveConfig({ ...cfg, clearApiKey });
       setCfg(saved);
+      setClearApiKey(false);
       toast.success('AI設定を保存しました');
       aiApi.health().then(setHealth).catch(() => {});
       loadStatus();
@@ -107,7 +164,7 @@ export function AiAdmin() {
 
       {/* 接続設定 */}
       <section className="card p-5 mb-5">
-        <h4 className="font-semibold text-sm mb-4">接続設定（LM Studio 等の OpenAI 互換サーバ）</h4>
+        <h4 className="font-semibold text-sm mb-4">LLM接続設定</h4>
 
         <label className="flex items-center gap-2.5 mb-4 cursor-pointer">
           <input type="checkbox" className="size-4" checked={cfg.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
@@ -116,29 +173,56 @@ export function AiAdmin() {
         </label>
 
         <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="プロバイダー">
+            <select className="input" value={cfg.provider} onChange={(e) => changeProvider(e.target.value as LlmProvider)}>
+              {PROVIDERS.map((provider) => <option key={provider.value} value={provider.value}>{provider.label}</option>)}
+            </select>
+          </Field>
+          <Field label="APIキー" hint={cfg.apiKeyConfigured && !clearApiKey ? '保存済み（値は再表示しません）' : 'ローカル接続では空欄で利用できます'}>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                autoComplete="new-password"
+                className="input flex-1"
+                value={cfg.apiKey}
+                onChange={(e) => { patch({ apiKey: e.target.value }); setClearApiKey(false); }}
+                placeholder={cfg.apiKeyConfigured && !clearApiKey ? '保存済みのキーを変更する場合のみ入力' : 'APIキー（任意）'}
+              />
+              {cfg.apiKeyConfigured && !clearApiKey && (
+                <Button size="sm" variant="ghost" onClick={() => { patch({ apiKey: '' }); setClearApiKey(true); }}>削除</Button>
+              )}
+            </div>
+          </Field>
           <Field label="ベースURL" className="sm:col-span-2">
             <input className="input" value={cfg.baseUrl} onChange={(e) => patch({ baseUrl: e.target.value })} placeholder="http://localhost:1234/v1" />
           </Field>
-          <Field label="チャットモデル" hint={cfg.chatModel ? '固定指定中' : `自動：${health?.resolvedChatModel || 'ロード済みのチャットモデルを使用'}`}>
-            <div className="flex items-center gap-2">
-              <select className="input flex-1" value={cfg.chatModel} onChange={(e) => patch({ chatModel: e.target.value })}>
-                <option value="">自動（ロード済みを使用）</option>
-                {chatModels.map((m) => <option key={m.id} value={m.id}>{optLabel(m)}</option>)}
-                {cfg.chatModel && !chatModels.some((m) => m.id === cfg.chatModel) && <option value={cfg.chatModel}>{cfg.chatModel}（未検出）</option>}
+          {cfg.provider === 'custom' && (
+            <Field label="APIキーの送信方法" hint="通常はAuthorization: Bearerを使用します">
+              <select className="input" value={cfg.apiKeyHeader} onChange={(e) => patch({ apiKeyHeader: e.target.value as LlmConfig['apiKeyHeader'] })}>
+                <option value="authorization">Authorization: Bearer</option>
+                <option value="api-key">api-key ヘッダー</option>
+                <option value="x-api-key">x-api-key ヘッダー</option>
               </select>
-              <Button size="sm" icon={loadingKind === 'chat' ? <Loader2 className="size-4 animate-spin" /> : <DownloadCloud className="size-4" />}
-                loading={loadingKind === 'chat'} disabled={!cfg.chatModel} onClick={() => loadNow('chat')} title="選択モデルをLM Studioへ読み込む">読込</Button>
+            </Field>
+          )}
+          <Field label="チャットモデル" hint={cfg.chatModel ? '固定指定中' : `自動：${health?.resolvedChatModel || 'モデル名を入力または候補から選択'}`}>
+            <div className="flex items-center gap-2">
+              <input list="chat-model-options" className="input flex-1" value={cfg.chatModel} onChange={(e) => patch({ chatModel: e.target.value })} placeholder="モデルID（空欄は自動）" />
+              <datalist id="chat-model-options">{chatModels.map((model) => <option key={model.id} value={model.id} />)}</datalist>
+              {cfg.provider === 'lmstudio' && (
+                <Button size="sm" icon={loadingKind === 'chat' ? <Loader2 className="size-4 animate-spin" /> : <DownloadCloud className="size-4" />}
+                  loading={loadingKind === 'chat'} disabled={!cfg.chatModel} onClick={() => loadNow('chat')} title="選択モデルをLM Studioへ読み込む">読込</Button>
+              )}
             </div>
           </Field>
           <Field label="埋め込みモデル" hint={cfg.embedModel ? 'RAG・検索に使用（固定指定中）' : `自動：${health?.resolvedEmbedModel || '埋め込みモデルが必要です'}`}>
             <div className="flex items-center gap-2">
-              <select className="input flex-1" value={cfg.embedModel} onChange={(e) => patch({ embedModel: e.target.value })}>
-                <option value="">自動（ロード済みを使用）</option>
-                {embedModels.map((m) => <option key={m.id} value={m.id}>{optLabel(m)}</option>)}
-                {cfg.embedModel && !embedModels.some((m) => m.id === cfg.embedModel) && <option value={cfg.embedModel}>{cfg.embedModel}（未検出）</option>}
-              </select>
-              <Button size="sm" icon={loadingKind === 'embed' ? <Loader2 className="size-4 animate-spin" /> : <DownloadCloud className="size-4" />}
-                loading={loadingKind === 'embed'} disabled={!cfg.embedModel} onClick={() => loadNow('embed')} title="選択モデルをLM Studioへ読み込む">読込</Button>
+              <input list="embed-model-options" className="input flex-1" value={cfg.embedModel} onChange={(e) => patch({ embedModel: e.target.value })} placeholder="埋め込みモデルID（空欄は自動）" />
+              <datalist id="embed-model-options">{embedModels.map((model) => <option key={model.id} value={model.id} />)}</datalist>
+              {cfg.provider === 'lmstudio' && (
+                <Button size="sm" icon={loadingKind === 'embed' ? <Loader2 className="size-4 animate-spin" /> : <DownloadCloud className="size-4" />}
+                  loading={loadingKind === 'embed'} disabled={!cfg.embedModel} onClick={() => loadNow('embed')} title="選択モデルをLM Studioへ読み込む">読込</Button>
+              )}
             </div>
           </Field>
 
@@ -173,10 +257,10 @@ export function AiAdmin() {
             <span className="text-xs text-muted tabular-nums">処理中 {health.queue.running} / 順番待ち {health.queue.waiting}</span>
           )}
         </div>
-        <p className="text-xs text-muted mb-4">ローカルLLMは同時処理に限りがあります。混雑時はリクエストを順番待ちにし、上限を超えた分のみ「混雑」エラーにします。</p>
+        <p className="text-xs text-muted mb-4">接続先への同時リクエスト数を制御します。混雑時は順番待ちにし、上限を超えた分のみ「混雑」エラーにします。</p>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="同時実行数" hint="LM Studioへ同時に流す数（通常1）">
+          <Field label="同時実行数" hint={cfg.provider === 'lmstudio' ? 'LM Studioでは通常1' : '接続先のレート制限に合わせて設定'}>
             <input type="number" min={1} max={8} className="input" value={cfg.maxConcurrency} onChange={(e) => patch({ maxConcurrency: Number(e.target.value) })} />
           </Field>
           <Field label="順番待ちの上限" hint="超過で混雑エラー">
@@ -187,19 +271,21 @@ export function AiAdmin() {
           </Field>
         </div>
 
-        <div className="mt-4 space-y-3">
-          <label className="flex items-center gap-2.5 cursor-pointer">
-            <input type="checkbox" className="size-4" checked={cfg.autoLoadModel} onChange={(e) => patch({ autoLoadModel: e.target.checked })} />
-            <span className="text-sm font-medium">モデル変更時にLM Studioへ自動で読み込む</span>
-          </label>
-          <label className="flex items-center gap-2.5 cursor-pointer">
-            <input type="checkbox" className="size-4" checked={cfg.unloadPrevious} onChange={(e) => patch({ unloadPrevious: e.target.checked })} />
-            <span className="text-sm font-medium">新モデル読込時に直前のモデルを解放する</span>
-          </label>
-          <Field label="lms CLI のパス（任意）" hint="旧モデル解放に使用（例: C:\\Users\\…\\.lmstudio\\bin\\lms.exe）。空のときは LM Studio 側の自動退避（Max loaded models=1 等）に委ねます。">
-            <input className="input" value={cfg.lmsPath} onChange={(e) => patch({ lmsPath: e.target.value })} placeholder="（空＝CLIアンロード無効）" />
-          </Field>
-        </div>
+        {cfg.provider === 'lmstudio' && (
+          <div className="mt-4 space-y-3">
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input type="checkbox" className="size-4" checked={cfg.autoLoadModel} onChange={(e) => patch({ autoLoadModel: e.target.checked })} />
+              <span className="text-sm font-medium">モデル変更時にLM Studioへ自動で読み込む</span>
+            </label>
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input type="checkbox" className="size-4" checked={cfg.unloadPrevious} onChange={(e) => patch({ unloadPrevious: e.target.checked })} />
+              <span className="text-sm font-medium">新モデル読込時に直前のモデルを解放する</span>
+            </label>
+            <Field label="lms CLI のパス（任意）" hint="旧モデル解放に使用（例: C:\\Users\\…\\.lmstudio\\bin\\lms.exe）。空のときはLM Studio側の設定に委ねます。">
+              <input className="input" value={cfg.lmsPath} onChange={(e) => patch({ lmsPath: e.target.value })} placeholder="（空＝CLIアンロード無効）" />
+            </Field>
+          </div>
+        )}
 
         <div className="mt-4 flex justify-end">
           <Button variant="primary" icon={<Save className="size-4" />} loading={saving} onClick={save}>設定を保存</Button>

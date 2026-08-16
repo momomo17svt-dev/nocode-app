@@ -32,7 +32,7 @@ export function Home() {
       .then((r) => { setApps(r.apps); setTasks(r.myTasks); })
       .catch((e) => toast.error(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [toast]);
 
   const totalOpen = apps.reduce((s, a) => s + (a.hasProcess ? a.open : 0), 0);
   const procApps = apps.filter((a) => a.hasProcess);

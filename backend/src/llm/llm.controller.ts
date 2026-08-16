@@ -27,15 +27,17 @@ export class LlmController {
   @UseGuards(RolesGuard)
   @Roles('SystemAdmin')
   config() {
-    return this.llm.getConfig();
+    return this.llm.getPublicConfig();
   }
 
   /** AI設定の更新（管理者のみ）。 */
   @Put('config')
   @UseGuards(RolesGuard)
   @Roles('SystemAdmin')
-  update(@Body() dto: UpdateLlmConfigDto) {
-    return this.llm.saveConfig(dto);
+  async update(@Body() dto: UpdateLlmConfigDto) {
+    const { clearApiKey, ...patch } = dto;
+    const saved = await this.llm.saveConfig(patch, clearApiKey === true);
+    return this.llm.toPublicConfig(saved);
   }
 
   /** 指定モデルをLM Studio側でロード（旧モデル解放込み・管理者のみ）。完了後の状態を返す。 */

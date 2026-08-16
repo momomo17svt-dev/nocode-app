@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { MessageSquare, Search, BarChart3, Sparkles } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import { api } from '../lib/api';
-import type { LlmHealth } from '../lib/ai';
+import { aiApi, type ChatSourceMode, type KnowledgeItem, type LlmHealth } from '../lib/ai';
 import { LlmStatusBadge } from '../components/ai/LlmStatusBadge';
 import { ChatPanel } from '../components/ai/ChatPanel';
 import { SearchPanel } from '../components/ai/SearchPanel';
@@ -12,21 +12,28 @@ import { cn } from '../lib/cn';
 
 type Tab = 'chat' | 'search' | 'analyze';
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-  { key: 'chat', label: 'チャット', icon: <MessageSquare className="size-4" /> },
-  { key: 'search', label: 'セマンティック検索', icon: <Search className="size-4" /> },
+  { key: 'chat', label: 'AIチャット', icon: <MessageSquare className="size-4" /> },
+  { key: 'search', label: 'データ検索', icon: <Search className="size-4" /> },
   { key: 'analyze', label: 'AI分析', icon: <BarChart3 className="size-4" /> },
 ];
 
 export function AiAssistant() {
   const [params, setParams] = useSearchParams();
   const initialApp = params.get('app') || '';
+  const requestedSource = params.get('source');
+  const initialSource: ChatSourceMode = ['plain', 'records', 'knowledge', 'both'].includes(requestedSource || '')
+    ? requestedSource as ChatSourceMode
+    : 'plain';
+  const initialDoc = initialSource === 'knowledge' ? params.get('doc') || '' : '';
   const initialTab = (params.get('tab') as Tab) || (initialApp ? 'analyze' : 'chat');
   const [tab, setTab] = useState<Tab>(TABS.some((t) => t.key === initialTab) ? initialTab : 'chat');
   const [apps, setApps] = useState<{ id: string; name: string }[]>([]);
+  const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
   const [health, setHealth] = useState<LlmHealth | null>(null);
 
   useEffect(() => {
     api.get('/apps').then((rows) => setApps((rows || []).map((a: any) => ({ id: a.id, name: a.name })))).catch(() => setApps([]));
+    aiApi.listKnowledge().then(setKnowledge).catch(() => setKnowledge([]));
   }, []);
 
   const selectTab = (t: Tab) => {
@@ -49,7 +56,7 @@ export function AiAssistant() {
           </span>
           <div>
             <h1 className="text-xl font-bold tracking-tight leading-tight">AIアシスタント</h1>
-            <p className="text-xs text-muted">ローカルLLMで社内データを検索・分析します</p>
+            <p className="text-xs text-muted">通常の会話と、参照範囲を指定した社内データ活用を切り替えられます</p>
           </div>
         </div>
 
@@ -75,10 +82,21 @@ export function AiAssistant() {
         </div>
 
         <div className="flex-1 min-h-0">
-          {tab === 'chat' && <ChatPanel disabled={!ragReady} fill />}
+          {tab === 'chat' && (
+            <ChatPanel
+              disabled={!chatReady}
+              ragDisabled={!ragReady}
+              allowSourceSelection
+              sourceMode={initialSource}
+              docId={initialDoc || undefined}
+              apps={apps}
+              knowledge={knowledge}
+              fill
+            />
+          )}
           {tab === 'search' && (
             <div className="h-full overflow-y-auto pr-1">
-              <SearchPanel disabled={!ragReady} />
+              <SearchPanel disabled={!ragReady} allowSourceSelection apps={apps} knowledge={knowledge} />
             </div>
           )}
           {tab === 'analyze' && (

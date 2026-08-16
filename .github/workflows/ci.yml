@@ -11,12 +11,30 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nocode_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nocode_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/nocode_db?schema=public
+      JWT_SECRET: ci_test_secret_0123456789abcdef0123456789abcdef
+      AUTH_EXPOSE_BEARER_TOKEN: "true"
     defaults:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -26,6 +44,19 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test -- --runInBand
+      - run: npm run test:e2e
+      - name: Verify database backup and restore
+        working-directory: .
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" pg_dump -U postgres --no-owner --no-privileges nocode_test_db > "$RUNNER_TEMP/nocode_test.sql"
+          docker exec "$POSTGRES_CONTAINER" createdb -U postgres nocode_restore_verify
+          docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -d nocode_restore_verify < "$RUNNER_TEMP/nocode_test.sql"
+          TABLE_COUNT=$(docker exec "$POSTGRES_CONTAINER" psql -U postgres -d nocode_restore_verify -Atc "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public'")
+          USER_COUNT=$(docker exec "$POSTGRES_CONTAINER" psql -U postgres -d nocode_restore_verify -Atc 'SELECT COUNT(*) FROM "User"')
+          test "$TABLE_COUNT" -ge 10
+          test "$USER_COUNT" -ge 1
       - run: npm audit --omit=dev --audit-level=high
 
   frontend:
@@ -34,8 +65,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -43,4 +74,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+      - run: npm test
+      - name: Check for untranslated UI strings
+        run: npm run i18n:audit
       - run: npm audit --omit=dev --audit-level=high

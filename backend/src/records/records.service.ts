@@ -1,26 +1,59 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ForbiddenException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmbeddingService } from '../ai/embedding.service';
 import { PermissionService } from '../permissions/permission.service';
 import { evalFormula, evalRules, formatAutoNumber } from './compute.util';
+import { MAX_IMPORT_ROWS, sanitizeRecordInput } from './record-input.util';
+import { Prisma } from '@prisma/client';
+import { AttachmentsService } from '../attachments/attachments.service';
 
 interface ListOptions {
   search?: string;
   filters?: Record<string, string>;
 }
 
-type TxClient = any;
+export interface RecordListCondition {
+  field: string;
+  op: 'contains' | 'eq' | 'ne' | 'gt' | 'lt' | 'empty' | 'notempty';
+  value?: string;
+}
+
+export interface RecordPageOptions {
+  page: number;
+  pageSize: number;
+  search?: string;
+  conditions?: RecordListCondition[];
+  sort?: { field: string; order: 'asc' | 'desc' } | null;
+}
+
+type TxClient = Prisma.TransactionClient;
 
 @Injectable()
-export class RecordsService {
+export class RecordsService implements OnModuleInit, OnModuleDestroy {
+  private trashTimer: NodeJS.Timeout | null = null;
+  private trashInitialTimer: NodeJS.Timeout | null = null;
+
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private embeddings: EmbeddingService,
     private permission: PermissionService,
+    private attachments: AttachmentsService,
   ) {}
+
+  onModuleInit() {
+    this.trashInitialTimer = setTimeout(() => void this.purgeExpiredTrash(), 60_000);
+    this.trashInitialTimer.unref();
+    this.trashTimer = setInterval(() => void this.purgeExpiredTrash(), 6 * 60 * 60_000);
+    this.trashTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.trashInitialTimer) clearTimeout(this.trashInitialTimer);
+    if (this.trashTimer) clearInterval(this.trashTimer);
+  }
 
   /** AI埋め込みインデックスを非同期更新（失敗してもレコード操作は継続）。 */
   private reindexRecordAsync(appId: string, recordId: string) {
@@ -104,6 +137,131 @@ export class RecordsService {
     return filtered;
   }
 
+  /**
+   * 一覧タブ向けのサーバー側ページ取得。検索・絞り込み・並び替えをPostgreSQLで実行し、
+   * レコード件数が増えても全件をNode.js/ブラウザへ転送しない。
+   */
+  async findPage(
+    appId: string,
+    opts: RecordPageOptions,
+    allowedCreatorIds?: string[] | null,
+    fieldScope?: { field: string; userIds: string[] } | null,
+  ) {
+    const page = Math.max(1, Math.floor(opts.page));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(opts.pageSize)));
+    const clauses: Prisma.Sql[] = [Prisma.sql`r."appId" = ${appId}`];
+
+    if (allowedCreatorIds) {
+      clauses.push(
+        allowedCreatorIds.length
+          ? Prisma.sql`r."createdBy" IN (${Prisma.join(allowedCreatorIds)})`
+          : Prisma.sql`FALSE`,
+      );
+    }
+    if (fieldScope) {
+      const scopedValue = Prisma.sql`COALESCE(r."dataJson" ->> ${fieldScope.field}, '')`;
+      clauses.push(
+        fieldScope.userIds.length
+          ? Prisma.sql`${scopedValue} IN (${Prisma.join(fieldScope.userIds)})`
+          : Prisma.sql`FALSE`,
+      );
+    }
+    if (opts.search?.trim()) {
+      clauses.push(
+        Prisma.sql`EXISTS (
+          SELECT 1 FROM jsonb_each_text(r."dataJson") AS entry
+          WHERE entry.value ILIKE ${`%${opts.search.trim()}%`}
+        )`,
+      );
+    }
+    for (const condition of (opts.conditions || []).slice(0, 20)) {
+      clauses.push(this.recordConditionSql(condition));
+    }
+
+    const whereSql = Prisma.sql`WHERE ${Prisma.join(clauses, ' AND ')}`;
+    const countRows = await this.prisma.$queryRaw<Array<{ count: bigint }>>(
+      Prisma.sql`SELECT COUNT(*)::bigint AS count FROM "Record" r ${whereSql}`,
+    );
+    const total = Number(countRows[0]?.count || 0);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const currentPage = Math.min(page, totalPages);
+    const offset = (currentPage - 1) * pageSize;
+    const orderSql = await this.recordOrderSql(appId, opts.sort);
+    const idRows = await this.prisma.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`
+        SELECT r.id
+        FROM "Record" r
+        ${whereSql}
+        ORDER BY ${orderSql}, r."createdAt" DESC, r.id ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      `,
+    );
+    const ids = idRows.map((row) => row.id);
+    const records = ids.length
+      ? await this.prisma.record.findMany({
+          where: { id: { in: ids } },
+          include: {
+            creator: { select: { loginId: true, name: true } },
+            updater: { select: { loginId: true, name: true } },
+          },
+        })
+      : [];
+    const byId = new Map(records.map((record) => [record.id, record]));
+    return {
+      items: ids.map((id) => byId.get(id)).filter(Boolean),
+      total,
+      page: currentPage,
+      pageSize,
+      totalPages,
+    };
+  }
+
+  private recordConditionSql(condition: RecordListCondition): Prisma.Sql {
+    const valueSql = Prisma.sql`COALESCE(r."dataJson" ->> ${condition.field}, '')`;
+    const value = String(condition.value ?? '');
+    switch (condition.op) {
+      case 'contains':
+        return Prisma.sql`${valueSql} ILIKE ${`%${value}%`}`;
+      case 'eq':
+        return Prisma.sql`${valueSql} = ${value}`;
+      case 'ne':
+        return Prisma.sql`${valueSql} <> ${value}`;
+      case 'empty':
+        return Prisma.sql`${valueSql} = ''`;
+      case 'notempty':
+        return Prisma.sql`${valueSql} <> ''`;
+      case 'gt':
+      case 'lt': {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return Prisma.sql`FALSE`;
+        const numericSql = Prisma.sql`CASE WHEN ${valueSql} ~ '^[+-]?[0-9]+([.][0-9]+)?$' THEN (${valueSql})::numeric ELSE 0 END`;
+        return condition.op === 'gt'
+          ? Prisma.sql`${numericSql} > ${number}`
+          : Prisma.sql`${numericSql} < ${number}`;
+      }
+      default:
+        return Prisma.sql`TRUE`;
+    }
+  }
+
+  private async recordOrderSql(
+    appId: string,
+    sort?: { field: string; order: 'asc' | 'desc' } | null,
+  ): Promise<Prisma.Sql> {
+    if (!sort?.field) return Prisma.sql`r."createdAt" DESC`;
+    const field = await this.prisma.field.findUnique({
+      where: { appId_fieldCode: { appId, fieldCode: sort.field } },
+      select: { fieldType: true },
+    });
+    if (!field) return Prisma.sql`r."createdAt" DESC`;
+    const direction = Prisma.raw(sort.order === 'asc' ? 'ASC' : 'DESC');
+    const valueSql = Prisma.sql`COALESCE(r."dataJson" ->> ${sort.field}, '')`;
+    if (field.fieldType === 'number' || field.fieldType === 'calc') {
+      return Prisma.sql`CASE WHEN ${valueSql} ~ '^[+-]?[0-9]+([.][0-9]+)?$' THEN (${valueSql})::numeric ELSE NULL END ${direction} NULLS LAST`;
+    }
+    return Prisma.sql`${valueSql} ${direction}`;
+  }
+
   async findOne(id: string) {
     const record = await this.prisma.record.findUnique({
       where: { id },
@@ -140,9 +298,18 @@ export class RecordsService {
     };
   }
 
-  async create(appId: string, dataJson: any, userId: string) {
+  /**
+   * @param options.trustedSource サーバ内部で組み立てた値（複製など）は
+   *   フィールド定義による絞り込みを掛けない。項目を削除したアプリの過去値まで
+   *   複製時に落としてしまうため。外部入力では必ず既定(false)のまま使う。
+   */
+  async create(appId: string, dataJson: any, userId: string, options?: { trustedSource?: boolean }) {
     const record = await this.prisma.$transaction(async (tx) => {
-      const data = await this.computeFields(tx, appId, dataJson, true);
+      const fields = await tx.field.findMany({ where: { appId } });
+      const clean = options?.trustedSource
+        ? { ...(dataJson || {}) }
+        : sanitizeRecordInput(fields, dataJson);
+      const data = await this.computeFields(tx, appId, clean, true, undefined, fields);
       return tx.record.create({
         data: { appId, dataJson: data, createdBy: userId, updatedBy: userId },
       });
@@ -153,17 +320,31 @@ export class RecordsService {
   }
 
   /** 更新時に変更履歴を記録する。 */
-  async update(id: string, dataJson: any, userId: string, actor?: { canManage?: boolean }) {
+  async update(id: string, dataJson: any, userId: string, expectedVersion: number, actor?: { canManage?: boolean }) {
     const existing = await this.prisma.record.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('レコードが見つかりません');
+    if (existing.version !== expectedVersion) {
+      throw new ConflictException('別のユーザーが先に更新しました。最新内容を読み込み直してから編集してください');
+    }
 
     // 承認者ルーティング: 定義された遷移に承認者が設定されている場合、その本人(または管理権限)のみ実行可
     await this.assertProcessApprover(existing, dataJson, userId, !!actor?.canManage);
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      // 自動採番は既存値を保持しつつ、計算フィールドは再計算
-      const merged = { ...(existing.dataJson as any), ...dataJson };
-      const data = await this.computeFields(tx, existing.appId, merged, false, existing.dataJson as any);
+      // 自動採番は既存値を保持しつつ、計算フィールドは再計算。
+      // 絞り込みは今回届いた差分だけに掛ける（保存済みの値は既存フィールドが
+      // 削除済みでもそのまま残す）。
+      const fields = await tx.field.findMany({ where: { appId: existing.appId } });
+      const patch = sanitizeRecordInput(fields, dataJson);
+      const merged = { ...(existing.dataJson as any), ...patch };
+      const data = await this.computeFields(tx, existing.appId, merged, false, existing.dataJson as any, fields);
+      const changed = await tx.record.updateMany({
+        where: { id, version: expectedVersion },
+        data: { dataJson: data, updatedBy: userId, version: { increment: 1 } },
+      });
+      if (changed.count !== 1) {
+        throw new ConflictException('別のユーザーが先に更新しました。最新内容を読み込み直してから編集してください');
+      }
       await tx.recordHistory.create({
         data: {
           recordId: id,
@@ -172,10 +353,7 @@ export class RecordsService {
           newData: data,
         },
       });
-      return tx.record.update({
-        where: { id },
-        data: { dataJson: data, updatedBy: userId },
-      });
+      return tx.record.findUniqueOrThrow({ where: { id } });
     });
     await this.notifyAssignments(existing.appId, updated.dataJson, existing.dataJson, userId, id);
     await this.notifyApprovers(existing.appId, updated.dataJson, existing.dataJson, userId, id);
@@ -277,10 +455,17 @@ export class RecordsService {
     baseData: Record<string, any>,
     actorId: string,
   ): Promise<{ created: number }> {
+    // 配布先を書き込む項目はクライアント指定なので、そのアプリの user_select 項目であることを確かめる。
+    const assignee = await this.prisma.field.findFirst({
+      where: { appId, fieldCode: assigneeField, fieldType: 'user_select' },
+    });
+    if (!assignee) throw new BadRequestException('配布先を設定するユーザー選択項目が見つかりません');
+
     const uniq = Array.from(new Set(userIds)).filter(Boolean);
     let created = 0;
     for (const uid of uniq) {
-      await this.create(appId, { ...baseData, [assigneeField]: uid }, actorId);
+      // 書き込む項目名はDBで実在を確認した値を使う（クライアント文字列をそのまま鍵にしない）。
+      await this.create(appId, { ...baseData, [assignee.fieldCode]: uid }, actorId);
       created++;
     }
     return { created };
@@ -293,8 +478,9 @@ export class RecordsService {
     input: Record<string, any>,
     isCreate: boolean,
     existingData?: Record<string, any>,
+    preloadedFields?: { fieldCode: string; fieldType: string; settings: any }[],
   ): Promise<Record<string, any>> {
-    const fields = await tx.field.findMany({ where: { appId } });
+    const fields = preloadedFields ?? (await tx.field.findMany({ where: { appId } }));
     const result: Record<string, any> = { ...input };
 
     // 自動採番: 新規作成時は未設定なら採番。更新時はクライアントによる上書きを無視し保存済み値を維持。
@@ -434,13 +620,46 @@ export class RecordsService {
     for (const f of fields) {
       if (f.fieldType === 'auto_number') delete data[f.fieldCode];
     }
-    return this.create(existing.appId, data, userId);
+    return this.create(existing.appId, data, userId, { trustedSource: true });
   }
 
-  async remove(id: string) {
-    const deleted = await this.prisma.record.delete({ where: { id } });
+  async remove(id: string, deletedBy: string) {
+    const existing = await this.prisma.record.findUnique({
+      where: { id },
+      include: { comments: true, histories: true, attachments: true, app: { select: { name: true } } },
+    });
+    if (!existing) throw new NotFoundException('レコードが見つかりません');
+    const snapshot = {
+      record: {
+        id: existing.id,
+        appId: existing.appId,
+        createdBy: existing.createdBy,
+        updatedBy: existing.updatedBy,
+        dataJson: existing.dataJson,
+        version: existing.version,
+        createdAt: existing.createdAt.toISOString(),
+        updatedAt: existing.updatedAt.toISOString(),
+      },
+      comments: existing.comments.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() })),
+      histories: existing.histories.map((h) => ({ ...h, createdAt: h.createdAt.toISOString() })),
+      attachmentIds: existing.attachments.map((a) => a.id),
+    };
+    const expiresAt = new Date(Date.now() + 30 * 86_400_000);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.deletedRecord.create({
+        data: {
+          originalId: existing.id,
+          appId: existing.appId,
+          appName: existing.app.name,
+          snapshot: snapshot as any,
+          deletedBy,
+          expiresAt,
+        },
+      });
+      await tx.record.delete({ where: { id } });
+    });
     this.embeddings.removeRecord(id).catch((e) => console.error('[ai-index]', e?.message || e));
-    return deleted;
+    return { id, trashed: true, expiresAt };
   }
 
   /**
@@ -452,6 +671,7 @@ export class RecordsService {
     ids: string[],
     allowedCreatorIds?: string[] | null,
     fieldScope?: { field: string; userIds: string[] } | null,
+    deletedBy?: string,
   ) {
     let targetIds = ids;
     // 対象社員フィールド基準: 範囲内のレコードIDだけに絞ってから削除する。
@@ -466,15 +686,101 @@ export class RecordsService {
         .map((r) => r.id);
     }
     if (targetIds.length === 0) return { deleted: 0 };
-    const res = await this.prisma.record.deleteMany({
+    const rows = await this.prisma.record.findMany({
       where: {
         id: { in: targetIds },
         appId,
         ...(allowedCreatorIds ? { createdBy: { in: allowedCreatorIds } } : {}),
       },
+      select: { id: true },
     });
-    this.embeddings.removeRecords(targetIds).catch((e) => console.error('[ai-index]', e?.message || e));
-    return { deleted: res.count };
+    let deleted = 0;
+    for (const row of rows) {
+      await this.remove(row.id, deletedBy || 'system');
+      deleted++;
+    }
+    return { deleted };
+  }
+
+  async listTrash(page = 1, pageSize = 50) {
+    await this.purgeExpiredTrash();
+    const size = Math.min(100, Math.max(1, Math.floor(pageSize)));
+    const requestedPage = Math.max(1, Math.floor(page));
+    const total = await this.prisma.deletedRecord.count();
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    const currentPage = Math.min(requestedPage, totalPages);
+    const items = await this.prisma.deletedRecord.findMany({
+      orderBy: { deletedAt: 'desc' },
+      skip: (currentPage - 1) * size,
+      take: size,
+    });
+    return { items, total, page: currentPage, pageSize: size, totalPages };
+  }
+
+  async restoreTrash(id: string, actorId: string) {
+    const trash = await this.prisma.deletedRecord.findUnique({ where: { id } });
+    if (!trash) throw new NotFoundException('ゴミ箱のレコードが見つかりません');
+    const snapshot = trash.snapshot as any;
+    const original = snapshot?.record;
+    if (!original) throw new NotFoundException('復元データが壊れています');
+    const app = await this.prisma.app.findUnique({ where: { id: original.appId } });
+    if (!app) throw new NotFoundException('復元先のアプリが存在しません');
+    if (await this.prisma.record.findUnique({ where: { id: original.id }, select: { id: true } })) {
+      throw new ConflictException('同じIDのレコードが既に存在するため復元できません');
+    }
+    const creator = await this.prisma.user.findUnique({ where: { id: original.createdBy }, select: { id: true } });
+    const updater = await this.prisma.user.findUnique({ where: { id: original.updatedBy }, select: { id: true } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.record.create({
+        data: {
+          id: original.id,
+          appId: original.appId,
+          createdBy: creator?.id || actorId,
+          updatedBy: updater?.id || actorId,
+          dataJson: original.dataJson,
+          version: Number(original.version || 1) + 1,
+          createdAt: new Date(original.createdAt),
+          updatedAt: new Date(),
+          comments: {
+            create: (snapshot.comments || []).map((c: any) => ({
+              id: c.id, userId: c.userId, comment: c.comment, createdAt: new Date(c.createdAt),
+            })),
+          },
+          histories: {
+            create: (snapshot.histories || []).map((h: any) => ({
+              id: h.id, changedBy: h.changedBy, oldData: h.oldData, newData: h.newData, createdAt: new Date(h.createdAt),
+            })),
+          },
+        },
+      });
+      const attachmentIds = (snapshot.attachmentIds || []).filter(Boolean);
+      if (attachmentIds.length) {
+        await tx.attachment.updateMany({ where: { id: { in: attachmentIds } }, data: { recordId: original.id } });
+      }
+      await tx.deletedRecord.delete({ where: { id } });
+    });
+    this.reindexRecordAsync(original.appId, original.id);
+    return { success: true, recordId: original.id, appId: original.appId };
+  }
+
+  async purgeTrash(id: string) {
+    const trash = await this.prisma.deletedRecord.findUnique({ where: { id } });
+    if (!trash) throw new NotFoundException('ゴミ箱のレコードが見つかりません');
+    const attachmentIds: string[] = ((trash.snapshot as any)?.attachmentIds || []).filter(Boolean);
+    for (const attachmentId of attachmentIds) {
+      await this.attachments.remove(attachmentId).catch(() => undefined);
+    }
+    await this.prisma.deletedRecord.delete({ where: { id } });
+    return { success: true };
+  }
+
+  async purgeExpiredTrash() {
+    const expired = await this.prisma.deletedRecord.findMany({
+      where: { expiresAt: { lte: new Date() } },
+      select: { id: true },
+    });
+    for (const row of expired) await this.purgeTrash(row.id).catch(() => undefined);
+    return { purged: expired.length };
   }
 
   async addComment(recordId: string, userId: string, comment: string) {
@@ -548,6 +854,11 @@ export class RecordsService {
     rows: Record<string, any>[],
     userId: string,
   ): Promise<{ created: number; errors: { row: number; message: string }[] }> {
+    if ((rows?.length ?? 0) > MAX_IMPORT_ROWS) {
+      throw new BadRequestException(
+        `一度に取り込めるのは${MAX_IMPORT_ROWS.toLocaleString()}行までです。ファイルを分割してください`,
+      );
+    }
     const fields = await this.prisma.field.findMany({ where: { appId } });
     const required = fields.filter((f) => f.required).map((f) => f.fieldCode);
     const validCodes = new Set(fields.map((f) => f.fieldCode));
@@ -557,10 +868,10 @@ export class RecordsService {
 
     for (let i = 0; i < rows.length; i++) {
       const raw = rows[i];
-      // 定義済みフィールドのみ取り込む
-      const data: Record<string, any> = {};
+      // 定義済みフィールドのみ取り込む（キーはフィールドコード＝`__proto__`もあり得るのでnullプロトタイプへ）
+      const data: Record<string, any> = Object.create(null);
       for (const [k, v] of Object.entries(raw)) {
-        if (validCodes.has(k)) data[k] = v;
+        if (validCodes.has(k)) data[k] = decodeCsvCell(v);
       }
       const missing = required.filter((c) => data[c] === undefined || data[c] === '');
       if (missing.length > 0) {
@@ -575,12 +886,31 @@ export class RecordsService {
   }
 }
 
+/**
+ * Excel/表計算ソフトが「数式」として解釈しはじめる先頭文字。
+ * この文字で始まるセルをそのまま出力すると、CSVを開いた人の環境で
+ * 意図しない式(=cmd|... 等)が実行され得る(CSVインジェクション)。
+ */
+const CSV_FORMULA_LEAD = /^[=+\-@\t\r]/;
+
 function csvCell(v: any): string {
-  const s =
+  const raw =
     v === null || v === undefined
       ? ''
       : typeof v === 'object'
         ? JSON.stringify(v)
         : String(v);
+  // 数式化を防ぐためシングルクォートを前置する。Excelでは表示されず、
+  // 本アプリへ取り込み直す際は decodeCsvCell が元に戻す。
+  const s = CSV_FORMULA_LEAD.test(raw) ? "'" + raw : raw;
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/**
+ * csvCell が付けた無害化用シングルクォートだけを取り除く。
+ * エクスポート→インポートの往復で値が変質しないようにするための対。
+ */
+function decodeCsvCell(v: any): any {
+  if (typeof v !== 'string') return v;
+  return v.startsWith("'") && CSV_FORMULA_LEAD.test(v.slice(1)) ? v.slice(1) : v;
 }

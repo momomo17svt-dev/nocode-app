@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, KeyRound, CheckCircle2 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -16,10 +16,15 @@ export function ChangePassword() {
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
+  const [minLength, setMinLength] = useState(8);
+
+  useEffect(() => {
+    api.get<{ minLength: number }>('/auth/password-policy').then((policy) => setMinLength(policy.minLength)).catch(() => undefined);
+  }, []);
 
   const submit = async () => {
     setErr(''); setMsg('');
-    if (newPassword.length < 8) { setErr('新しいパスワードは8文字以上にしてください'); return; }
+    if (newPassword.length < minLength) { setErr(`新しいパスワードは${minLength}文字以上にしてください`); return; }
     if (newPassword !== confirm) { setErr('確認用パスワードが一致しません'); return; }
     setSaving(true);
     try {
@@ -45,7 +50,7 @@ export function ChangePassword() {
         <Field label="現在のパスワード">
           <input type="password" className="input" value={currentPassword} onChange={(e) => setCurrent(e.target.value)} />
         </Field>
-        <Field label="新しいパスワード（8文字以上）">
+        <Field label={`新しいパスワード（${minLength}文字以上）`}>
           <input type="password" className="input" value={newPassword} onChange={(e) => setNew(e.target.value)} />
         </Field>
         <Field label="新しいパスワード（確認）">

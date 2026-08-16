@@ -65,7 +65,7 @@ describe('AttachmentsController', () => {
     });
 
     it('正常時は保存して監査記録する', async () => {
-      const file = { originalname: 'doc.pdf', mimetype: 'application/pdf', size: 100, buffer: Buffer.from('test') } as any;
+      const file = { originalname: 'doc.pdf', mimetype: 'application/pdf', size: 100, buffer: Buffer.from('%PDF-1.7\n') } as any;
       const res = await controller.upload(file, 'r1', 'f', user, req);
       expect(service.createFromUpload).toHaveBeenCalled();
       expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'ATTACHMENT_UPLOAD' }));
@@ -81,7 +81,7 @@ describe('AttachmentsController', () => {
     });
 
     it('追加権限のみ + 本人レコード + editOwn 設定ONなら保存できる', async () => {
-      const file = { originalname: 'doc.pdf', mimetype: 'application/pdf', size: 100, buffer: Buffer.from('test') } as any;
+      const file = { originalname: 'doc.pdf', mimetype: 'application/pdf', size: 100, buffer: Buffer.from('%PDF-1.7\n') } as any;
       permission.getEffectivePermission.mockResolvedValue(PERM({ canEdit: false, canManage: false }));
       permission.getOwnMutationFlags.mockResolvedValue({ editOwn: true, deleteOwn: false });
       const res = await controller.upload(file, 'r1', 'f', user, req);

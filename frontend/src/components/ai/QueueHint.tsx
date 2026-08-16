@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Loader2, Clock } from 'lucide-react';
 import { aiApi, type QueueStatus, type QueuedInfo } from '../../lib/ai';
 
-/** GET /llm/queue を軽量ポーリング（active時のみ）。LM Studio非接触なので頻繁に呼んでよい。 */
+/** GET /llm/queue を軽量ポーリング（active時のみ）。外部LLM非接触なので頻繁に呼んでよい。 */
 export function useLlmQueue(active: boolean, intervalMs = 3000): QueueStatus | null {
   const [status, setStatus] = useState<QueueStatus | null>(null);
   useEffect(() => {

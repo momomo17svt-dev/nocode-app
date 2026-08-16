@@ -26,7 +26,7 @@ export function AccessEditor({ value, onChange, users, groups, canPublic }: Prop
   const [pick, setPick] = useState('');
 
   const modes: AccessMode[] = canPublic ? ['private', 'shared', 'public'] : ['private', 'shared'];
-  const shares = value.shares || [];
+  const shares = useMemo(() => value.shares || [], [value.shares]);
 
   // 追加候補（未追加のユーザー/グループ）
   const candidates = useMemo(() => {

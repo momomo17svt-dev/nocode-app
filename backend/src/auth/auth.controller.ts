@@ -1,9 +1,11 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { LoginDto, ChangePasswordDto } from './dto/login.dto';
+import { clearAuthCookies, setAuthCookies } from './auth-cookie.util';
 
 @Controller('api/auth')
 export class AuthController {
@@ -14,8 +16,9 @@ export class AuthController {
 
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  async login(@Body() dto: LoginDto, @Req() req: any) {
-    const result = await this.authService.login(dto.loginId, dto.password);
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(dto.loginId, dto.password, req.ip || 'unknown');
+    setAuthCookies(res, result.access_token);
     await this.audit.log({
       userId: result.user.id,
       actionType: 'LOGIN',
@@ -23,13 +26,30 @@ export class AuthController {
       targetId: result.user.id,
       ipAddress: req.ip,
     });
-    return result;
+    return process.env.AUTH_EXPOSE_BEARER_TOKEN === 'true'
+      ? result
+      : { user: result.user };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Post('session')
+  createCookieSession(
+    @CurrentUser() user: AuthUser,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    setAuthCookies(res, this.authService.issueToken(user));
+    return { success: true };
   }
 
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @Post('logout')
-  async logout(@CurrentUser() user: AuthUser, @Req() req: any) {
+  async logout(
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     await this.audit.log({
       userId: user.userId,
       actionType: 'LOGOUT',
@@ -37,6 +57,7 @@ export class AuthController {
       targetId: user.userId,
       ipAddress: req.ip,
     });
+    clearAuthCookies(res);
     return { success: true };
   }
 
@@ -47,9 +68,15 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('password-policy')
+  getPasswordPolicy() {
+    return this.authService.passwordPolicy();
+  }
+
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @Post('change-password')
-  async changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto, @Req() req: any) {
+  async changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto, @Req() req: Request) {
     const result = await this.authService.changePassword(
       user.userId,
       user.loginId,

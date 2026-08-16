@@ -246,15 +246,17 @@ export function MapView({
 
   // controlledCenter: 保存済みの center/zoom が変わったら地図を追従移動させる（「既定に戻す」や数値入力用）。
   // ユーザー操作で動かしただけ（center/zoom プロップは不変）では発火せず、無限ループを避ける。
+  const centerLat = center?.lat;
+  const centerLng = center?.lng;
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !controlledCenter || !center) return;
+    if (!map || !controlledCenter || centerLat == null || centerLng == null) return;
     const cur = map.getCenter();
     const curZoom = map.getZoom();
     const targetZoom = zoom ?? curZoom;
-    if (Math.abs(cur.lat - center.lat) < 1e-6 && Math.abs(cur.lng - center.lng) < 1e-6 && curZoom === targetZoom) return;
-    map.setView([center.lat, center.lng], targetZoom);
-  }, [controlledCenter, center?.lat, center?.lng, zoom]);
+    if (Math.abs(cur.lat - centerLat) < 1e-6 && Math.abs(cur.lng - centerLng) < 1e-6 && curZoom === targetZoom) return;
+    map.setView([centerLat, centerLng], targetZoom);
+  }, [controlledCenter, centerLat, centerLng, zoom]);
 
   return (
     <div className={`relative w-full rounded-xl overflow-hidden border border-border z-0 ${className}`}>

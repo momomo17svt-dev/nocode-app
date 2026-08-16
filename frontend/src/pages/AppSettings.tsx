@@ -37,7 +37,7 @@ export function AppSettings() {
   useEffect(() => {
     if (!appId) return;
     api.get(`/apps/${appId}`).then(setApp).catch((e) => toast.error(e.message));
-  }, [appId]);
+  }, [appId, toast]);
 
   const duplicateApp = async () => {
     if (!(await confirm({ title: 'アプリを複製', message: 'このアプリをフォーム定義・公開設定ごと複製しますか？（レコードは複製されません）', confirmText: '複製' }))) return;
@@ -221,7 +221,7 @@ function FormBuilder({ appId }: { appId: string }) {
 
   useEffect(() => {
     api.get(`/fields?appId=${appId}`).then((data) => setFields(data)).catch((e) => toast.error(e.message));
-  }, [appId]);
+  }, [appId, toast]);
 
   const addField = (type: string) => {
     const seq = fields.length + 1;
@@ -915,7 +915,7 @@ function PublishSettings({ appId, app, onAppChange }: { appId: string; app: any;
       }
     }).catch((e) => toast.error(e.message));
     api.get(`/fields?appId=${appId}`).then(setFields).catch(() => {});
-  }, [appId]);
+  }, [appId, toast]);
 
   const dateFields = fields.filter((f) => f.fieldType === 'date' || f.fieldType === 'datetime');
   const reminderUserFields = fields.filter((f) => f.fieldType === 'user_select');

@@ -38,15 +38,16 @@ docker compose up -d --build
 - 添付: `storage/attachments/`
 - オフライン地図: `storage/tiles/`
 
-## LM Studio
+## AI接続
 
-Windowsホスト上のLM Studioには、Dockerから次のURLで接続します。
+管理画面ではLM Studio、Ollama、OpenAI、OpenRouter、Groq、Gemini、Mistral、任意のOpenAI互換APIを選べます。Windowsホスト上のローカルサーバーへDockerから接続するときは、`localhost`ではなく`host.docker.internal`を使います。
 
 ```text
-http://host.docker.internal:1234/v1
+LM Studio: http://host.docker.internal:1234/v1
+Ollama:    http://host.docker.internal:11434/v1
 ```
 
-管理画面に古い接続先が保存されている場合は、管理画面側の設定が環境変数より優先されるため修正してください。
+クラウド接続ではAPIキーを管理画面または`.env`の`LLM_API_KEY`へ設定します。管理画面に保存した接続先とキーは環境変数より優先されます。保存済みキーは画面へ再表示されません。
 
 ## バックアップ
 

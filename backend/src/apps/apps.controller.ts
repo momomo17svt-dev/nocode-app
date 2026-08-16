@@ -65,7 +65,7 @@ export class AppsController {
   ) {
     const result = await this.appsService.createFromSuite(
       dto.suiteId,
-      { withSamples: dto.withSamples },
+      { withSamples: dto.withSamples, allowDuplicate: dto.allowDuplicate },
       user.userId,
     );
     for (const app of result.apps) {

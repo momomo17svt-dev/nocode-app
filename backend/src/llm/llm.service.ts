@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { spawn } from 'child_process';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmQueue } from './llm-queue';
@@ -7,9 +7,12 @@ import {
   DEFAULT_LLM_CONFIG,
   LlmConfig,
   LlmHealth,
+  LLM_PROVIDER_BASE_URLS,
   LLM_CONFIG_KEY,
   ModelInfo,
   ModelKind,
+  normalizeProvider,
+  PublicLlmConfig,
   QueueStatus,
 } from './llm.types';
 
@@ -49,7 +52,12 @@ export class LlmService {
   async getConfig(): Promise<LlmConfig> {
     const row = await this.prisma.setting.findUnique({ where: { key: LLM_CONFIG_KEY } });
     const saved = (row?.value as Partial<LlmConfig>) || {};
-    const cfg = { ...DEFAULT_LLM_CONFIG, ...saved };
+    const cfg: LlmConfig = {
+      ...DEFAULT_LLM_CONFIG,
+      ...saved,
+      provider: normalizeProvider(saved.provider, saved.baseUrl || DEFAULT_LLM_CONFIG.baseUrl),
+      apiKey: typeof saved.apiKey === 'string' ? saved.apiKey : DEFAULT_LLM_CONFIG.apiKey,
+    };
     // キュー設定を最新化（同時実行数を増やした場合は待機中を起こす）
     this.queue.setConfig({
       maxConcurrency: cfg.maxConcurrency,
@@ -59,13 +67,27 @@ export class LlmService {
     return cfg;
   }
 
-  async saveConfig(patch: Partial<LlmConfig>): Promise<LlmConfig> {
+  async getPublicConfig(): Promise<PublicLlmConfig> {
+    return this.toPublicConfig(await this.getConfig());
+  }
+
+  toPublicConfig(cfg: LlmConfig): PublicLlmConfig {
+    const { apiKey, ...visible } = cfg;
+    return { ...visible, apiKey: '', apiKeyConfigured: Boolean(apiKey) };
+  }
+
+  async saveConfig(patch: Partial<LlmConfig>, clearApiKey = false): Promise<LlmConfig> {
     const current = await this.getConfig();
     // DTOインスタンスは未送信の任意プロパティを undefined として持つため、
     // そのまま展開すると既存値を消してしまう。undefined のキーは無視する。
     const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as Partial<LlmConfig>;
+    // 空欄は「保存済みキーを維持」。削除はclearApiKeyを明示した場合だけ行う。
+    if (!defined.apiKey?.trim()) delete defined.apiKey;
     const next: LlmConfig = { ...current, ...defined };
     // 値域の正規化
+    next.provider = normalizeProvider(next.provider, next.baseUrl);
+    // 別プロバイダーへ旧キーを誤送信しない。切替時は新しいキーが同時指定された場合だけ引き継ぐ。
+    if (clearApiKey || (next.provider !== current.provider && !defined.apiKey)) next.apiKey = '';
     next.temperature = clamp(Number(next.temperature) || 0, 0, 2);
     next.maxTokens = clamp(Math.round(Number(next.maxTokens) || 1024), 16, 32000);
     next.timeoutMs = clamp(Math.round(Number(next.timeoutMs) || 60000), 1000, 600000);
@@ -75,7 +97,14 @@ export class LlmService {
     next.maxQueue = clamp(Math.round(Number(next.maxQueue) || 32), 1, 500);
     next.queueTimeoutMs = clamp(Math.round(Number(next.queueTimeoutMs) || 120000), 1000, 600000);
     next.lmsPath = (next.lmsPath || '').trim();
-    next.baseUrl = (next.baseUrl || DEFAULT_LLM_CONFIG.baseUrl).replace(/\/+$/, '');
+    next.apiKey = (next.apiKey || '').trim();
+    next.apiKeyHeader = ['authorization', 'api-key', 'x-api-key'].includes(next.apiKeyHeader)
+      ? next.apiKeyHeader
+      : 'authorization';
+    const providerDefault = next.provider === 'custom'
+      ? DEFAULT_LLM_CONFIG.baseUrl
+      : LLM_PROVIDER_BASE_URLS[next.provider];
+    next.baseUrl = (next.baseUrl || providerDefault).replace(/\/+$/, '');
     next.indexedAppIds = Array.isArray(next.indexedAppIds) ? next.indexedAppIds.map(String) : [];
     await this.prisma.setting.upsert({
       where: { key: LLM_CONFIG_KEY },
@@ -84,8 +113,8 @@ export class LlmService {
     });
     this.queue.setConfig({ maxConcurrency: next.maxConcurrency, maxQueue: next.maxQueue, queueTimeoutMs: next.queueTimeoutMs });
 
-    // モデルが変わったら LM Studio 側へ自動ロード（保存応答はブロックしない）。
-    if (next.enabled && next.autoLoadModel) {
+    // モデルの自動ロードはLM Studio専用。クラウドAPIで意図しない課金リクエストを送らない。
+    if (next.provider === 'lmstudio' && next.enabled && next.autoLoadModel) {
       if (next.chatModel && next.chatModel !== current.chatModel) {
         void this.loadModel(next.chatModel, 'chat').catch(() => {});
       }
@@ -102,6 +131,7 @@ export class LlmService {
     const base: LlmHealth = {
       ok: false,
       enabled: cfg.enabled,
+      provider: cfg.provider,
       baseUrl: cfg.baseUrl,
       models: [],
       modelList: [],
@@ -122,7 +152,7 @@ export class LlmService {
         resolvedEmbedModel: cfg.embedModel || pickModel(list, 'embed')?.id || '',
       };
     } catch (e: any) {
-      return { ...base, error: friendly(e) };
+      return { ...base, error: friendly(e, cfg) };
     }
   }
 
@@ -138,18 +168,20 @@ export class LlmService {
    */
   async listModels(cfg?: LlmConfig): Promise<ModelInfo[]> {
     cfg = cfg || (await this.getConfig());
-    // 1) LM Studio ネイティブ REST API（種別・ロード状態を持つ）
-    try {
-      const res = await this.rawUrl(`${this.lmStudioOrigin(cfg)}/api/v0/models`, { method: 'GET' }, cfg, 8000);
-      const json: any = await res.json();
-      const data: any[] = Array.isArray(json?.data) ? json.data : [];
-      if (data.length) {
-        return data
-          .filter((m) => m?.id)
-          .map((m) => ({ id: String(m.id), type: normalizeKind(m.type, m.id), loaded: m.state ? m.state === 'loaded' : true }));
+    if (cfg.provider === 'lmstudio') {
+      // LM StudioだけはネイティブAPIからモデル種別とロード状態を取得できる。
+      try {
+        const res = await this.rawUrl(`${this.lmStudioOrigin(cfg)}/api/v0/models`, { method: 'GET' }, cfg, 8000);
+        const json: any = await res.json();
+        const data: any[] = Array.isArray(json?.data) ? json.data : [];
+        if (data.length) {
+          return data
+            .filter((m) => m?.id)
+            .map((m) => ({ id: String(m.id), type: normalizeKind(m.type, m.id), loaded: m.state ? m.state === 'loaded' : true }));
+        }
+      } catch {
+        /* OpenAI互換へフォールバック */
       }
-    } catch {
-      /* OpenAI互換へフォールバック */
     }
     // 2) OpenAI互換 /models（ID のみ → 名前で種別推測。ロード状態は不明なので true 扱い）
     const res = await this.raw('/models', { method: 'GET' }, cfg, 8000);
@@ -166,6 +198,9 @@ export class LlmService {
   async loadModel(model: string, kind: 'chat' | 'embed'): Promise<void> {
     if (!model) return;
     const cfg = await this.getConfig();
+    if (cfg.provider !== 'lmstudio') {
+      throw new BadRequestException('モデルの手動読み込みはLM Studio接続時のみ利用できます。');
+    }
     this.loadingState[kind] = model;
     try {
       // 直前の同種ロード済みモデル（対象以外）を解放（lms CLI 設定時のみ）
@@ -231,7 +266,7 @@ export class LlmService {
       cfg,
     );
     const json: any = await res.json();
-    if (json?.error) throw new ServiceUnavailableException(json.error.message || 'ローカルLLMがエラーを返しました');
+    if (json?.error) throw new ServiceUnavailableException(json.error.message || 'LLM APIがエラーを返しました');
     const msg = json?.choices?.[0]?.message || {};
     const content = stripThink(msg.content || '').trim();
     if (content) return content;
@@ -371,7 +406,9 @@ export class LlmService {
     if (cfg.chatModel) return cfg.chatModel;
     const picked = pickModel(await this.listModels(cfg), 'chat');
     if (!picked) {
-      throw new ServiceUnavailableException('チャット用モデルが見つかりません。LM Studio でモデルをロードしてください。');
+      throw new ServiceUnavailableException(
+        `チャット用モデルが見つかりません。${providerLabel(cfg.provider)}のモデル名を設定してください。`,
+      );
     }
     return picked.id;
   }
@@ -382,7 +419,9 @@ export class LlmService {
     if (cfg.embedModel) return cfg.embedModel;
     const picked = pickModel(await this.listModels(cfg), 'embed');
     if (!picked) {
-      throw new ServiceUnavailableException('埋め込み用モデルが見つかりません。LM Studio で埋め込みモデルをロードしてください。');
+      throw new ServiceUnavailableException(
+        `埋め込み用モデルが見つかりません。${providerLabel(cfg.provider)}の埋め込みモデル名を設定してください。`,
+      );
     }
     return picked.id;
   }
@@ -396,7 +435,7 @@ export class LlmService {
     const picked = pickModel(await this.listModels(cfg), 'vision');
     if (!picked) {
       throw new ServiceUnavailableException(
-        '画像読み取りに使えるモデル（VLM）が見つかりません。LM Studio で視覚対応モデルをロードしてください。',
+        `画像読み取りに使えるモデルが見つかりません。${providerLabel(cfg.provider)}の視覚対応モデル名を設定してください。`,
       );
     }
     return picked.id;
@@ -409,14 +448,22 @@ export class LlmService {
   }
 
   private raw(path: string, init: RequestInit, cfg: LlmConfig, timeoutMs?: number): Promise<Response> {
-    return this.rawUrl(`${cfg.baseUrl}${path}`, init, cfg, timeoutMs);
+    const queryAt = cfg.baseUrl.indexOf('?');
+    const basePath = queryAt >= 0 ? cfg.baseUrl.slice(0, queryAt) : cfg.baseUrl;
+    const query = queryAt >= 0 ? cfg.baseUrl.slice(queryAt) : '';
+    return this.rawUrl(`${basePath.replace(/\/+$/, '')}${path}${query}`, init, cfg, timeoutMs);
   }
 
   private async rawUrl(url: string, init: RequestInit, cfg: LlmConfig, timeoutMs?: number): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs ?? cfg.timeoutMs);
     try {
-      const res = await fetch(url, { ...init, signal: controller.signal });
+      const headers = new Headers(init.headers);
+      if (cfg.apiKey) {
+        if (cfg.apiKeyHeader === 'authorization') headers.set('Authorization', `Bearer ${cfg.apiKey}`);
+        else headers.set(cfg.apiKeyHeader, cfg.apiKey);
+      }
+      const res = await fetch(url, { ...init, headers, signal: controller.signal });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         let detail = body.slice(0, 300);
@@ -428,15 +475,15 @@ export class LlmService {
         }
         if (/load model|model_not_found|no model/i.test(detail)) {
           throw new ServiceUnavailableException(
-            `モデルを読み込めませんでした。LM Studio で対象モデルがロード済みかご確認ください（${detail.slice(0, 160)}）`,
+            `モデルを利用できませんでした。${providerLabel(cfg.provider)}のモデル名と利用状態をご確認ください（${detail.slice(0, 160)}）`,
           );
         }
-        throw new ServiceUnavailableException(`ローカルLLMがエラーを返しました (${res.status}): ${detail.slice(0, 200)}`);
+        throw new ServiceUnavailableException(`LLM APIがエラーを返しました (${res.status}): ${detail.slice(0, 200)}`);
       }
       return res;
     } catch (e: any) {
       if (e?.status) throw e; // 既に HttpException
-      throw new ServiceUnavailableException(friendly(e));
+      throw new ServiceUnavailableException(friendly(e, cfg));
     } finally {
       clearTimeout(timer);
     }
@@ -501,13 +548,26 @@ function pickModel(list: ModelInfo[], kind: 'chat' | 'embed' | 'vision'): ModelI
   return candidates.find((m) => m.loaded) || candidates[0];
 }
 
-function friendly(e: any): string {
+function providerLabel(provider: LlmConfig['provider']): string {
+  return {
+    lmstudio: 'LM Studio',
+    ollama: 'Ollama',
+    openai: 'OpenAI',
+    openrouter: 'OpenRouter',
+    groq: 'Groq',
+    gemini: 'Gemini',
+    mistral: 'Mistral',
+    custom: 'OpenAI互換API',
+  }[provider];
+}
+
+function friendly(e: any, cfg: LlmConfig): string {
   const msg = String(e?.message || e || '');
   if (e?.name === 'AbortError' || /aborted/i.test(msg)) {
-    return 'ローカルLLMの応答がタイムアウトしました。モデルの起動状況をご確認ください。';
+    return `${providerLabel(cfg.provider)}の応答がタイムアウトしました。接続先とモデルの状態をご確認ください。`;
   }
   if (/ECONNREFUSED|fetch failed|Failed to fetch|ENOTFOUND/i.test(msg)) {
-    return 'ローカルLLMに接続できません。LM Studio でローカルサーバとモデルを起動してください。';
+    return `${providerLabel(cfg.provider)}に接続できません。ベースURL、APIキー、サーバーの起動状態をご確認ください。`;
   }
-  return msg || 'ローカルLLMとの通信に失敗しました。';
+  return msg || `${providerLabel(cfg.provider)}との通信に失敗しました。`;
 }

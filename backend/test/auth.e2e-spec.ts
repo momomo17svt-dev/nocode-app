@@ -56,6 +56,30 @@ describe('Auth (e2e)', () => {
       const token = await login(ctx.app, 'alice');
       await request(http()).get('/api/auth/profile').set(bearer(token + 'x')).expect(401);
     });
+
+    it('HttpOnly Cookieで認証し、更新時はCSRFトークンを検証する', async () => {
+      const agent = request.agent(http());
+      const loginResponse = await agent
+        .post('/api/auth/login')
+        .send({ loginId: 'alice', password: 'password123' })
+        .expect(200);
+      const setCookies = loginResponse.headers['set-cookie'] as unknown as string[];
+      expect(setCookies.some((cookie) => cookie.startsWith('nocode_session=') && cookie.includes('HttpOnly'))).toBe(true);
+      const csrfCookie = setCookies.find((cookie) => cookie.startsWith('nocode_csrf='));
+      const csrf = csrfCookie?.split(';')[0].split('=')[1];
+      expect(csrf).toEqual(expect.any(String));
+
+      await agent.get('/api/auth/profile').expect(200);
+      await agent
+        .post('/api/auth/change-password')
+        .send({ currentPassword: 'password123', newPassword: 'newpassword456' })
+        .expect(403);
+      await agent
+        .post('/api/auth/change-password')
+        .set('X-CSRF-Token', csrf!)
+        .send({ currentPassword: 'password123', newPassword: 'newpassword456' })
+        .expect(200);
+    });
   });
 
   describe('POST /api/auth/change-password', () => {

@@ -167,18 +167,19 @@ describe('Authorization (e2e)', () => {
       const recId = created.body.id;
 
       // member2 は編集権限はあるが範囲外 → 403
+      // （バージョン照合を通した上で権限で弾かれることを見るため expectedVersion は正しい値を送る）
       const mem2Token = await login(ctx.app, 'member2');
       await request(http())
         .put(`/api/records/${recId}`)
         .set(bearer(mem2Token))
-        .send({ data: { title: '改ざん' } })
+        .send({ data: { title: '改ざん' }, expectedVersion: created.body.version })
         .expect(403);
 
       // 本人は更新できる
-      await request(http())
+      const byOwner = await request(http())
         .put(`/api/records/${recId}`)
         .set(bearer(memToken))
-        .send({ data: { title: '本人更新' } })
+        .send({ data: { title: '本人更新' }, expectedVersion: created.body.version })
         .expect(200);
 
       // 管理者も更新できる
@@ -186,7 +187,7 @@ describe('Authorization (e2e)', () => {
       await request(http())
         .put(`/api/records/${recId}`)
         .set(bearer(adminToken))
-        .send({ data: { title: '管理者更新' } })
+        .send({ data: { title: '管理者更新' }, expectedVersion: byOwner.body.version })
         .expect(200);
     });
   });

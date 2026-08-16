@@ -25,18 +25,28 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      TZ: ${TZ:-Asia/Tokyo}
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nocode_db}?schema=public
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required. Run start_docker.bat first.}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      AUTH_COOKIE_MAX_AGE_MS: ${AUTH_COOKIE_MAX_AGE_MS:-28800000}
+      AUTH_EXPOSE_BEARER_TOKEN: "false"
       INITIAL_ADMIN_LOGIN: ${INITIAL_ADMIN_LOGIN:-admin}
       INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-Administrator}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       TRUST_PROXY: "1"
       PUBLIC_FORM_RATE_LIMIT_PER_MINUTE: ${PUBLIC_FORM_RATE_LIMIT_PER_MINUTE:-10}
+      SLOW_REQUEST_MS: ${SLOW_REQUEST_MS:-1000}
+      DB_SLOW_QUERY_MS: ${DB_SLOW_QUERY_MS:-500}
+      HTTP_LOG_MODE: ${HTTP_LOG_MODE:-slow}
       STORAGE_DIR: /data/storage
+      LLM_PROVIDER: ${LLM_PROVIDER:-lmstudio}
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_KEY_HEADER: ${LLM_API_KEY_HEADER:-authorization}
     volumes:
       - ./storage:/data/storage
     expose:
@@ -63,6 +73,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE: /api
+        VITE_API_TIMEOUT_MS: ${VITE_API_TIMEOUT_MS:-20000}
     restart: unless-stopped
     ports:
       - "${APP_PORT:-5173}:80"
