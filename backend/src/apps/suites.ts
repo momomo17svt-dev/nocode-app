@@ -137,7 +137,8 @@ const quoteApp: AppTemplate = {
         { fieldCode: 'amount', fieldType: 'calc', label: '金額', settings: { formula: 'qty * unit_price', unit: '円', thousandSeparator: true } },
       ] },
     },
-    { fieldCode: 'subtotal', fieldType: 'number', label: '小計', settings: { unit: '円', thousandSeparator: true } },
+    // 明細から自動集計する。手入力にすると行を足しても小計・税・合計が古いままになる。
+    { fieldCode: 'subtotal', fieldType: 'calc', label: '小計', settings: { formula: 'sum(items.amount)', unit: '円', thousandSeparator: true } },
     { fieldCode: 'tax_rate', fieldType: 'number', label: '消費税率', settings: { unit: '%', defaultValue: 10 } },
     { fieldCode: 'tax', fieldType: 'calc', label: '消費税', settings: { formula: 'floor(subtotal * tax_rate / 100)', unit: '円', thousandSeparator: true } },
     { fieldCode: 'total', fieldType: 'calc', label: '合計', settings: { formula: 'subtotal + tax', unit: '円', thousandSeparator: true } },
@@ -196,7 +197,8 @@ const invoiceApp: AppTemplate = {
   fields: [
     { fieldCode: 'inv_no', fieldType: 'auto_number', label: '請求番号', settings: { prefix: 'INV-', padding: 4 } },
     { fieldCode: 'subject', fieldType: 'text', label: '件名', required: true, settings: { maxLength: 200 } },
-    { fieldCode: 'quote', fieldType: 'reference', label: '見積', settings: { refTemplate: 'quote', refDisplayField: 'subject' } },
+    // 見積を選ぶと請求先と金額を転記する（lead が顧客から転記しているのと同じ仕組み）。
+    { fieldCode: 'quote', fieldType: 'reference', label: '見積', settings: { refTemplate: 'quote', refDisplayField: 'subject', lookups: [{ from: 'total', to: 'amount' }] } },
     { fieldCode: 'customer_name', fieldType: 'text', label: '請求先' },
     { fieldCode: 'issue_date', fieldType: 'date', label: '発行日' },
     { fieldCode: 'due_date', fieldType: 'date', label: '支払期限' },
