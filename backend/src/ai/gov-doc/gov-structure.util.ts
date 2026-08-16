@@ -362,7 +362,8 @@ export function parseGovDoc(rawText: string): GovStructure {
 }
 
 function circledOrNum(s: string): boolean {
-  return CIRCLED.includes(s) || /^[２-９０-９0-9]+$/.test(s);
+  // 全角は ０-９ で足りる（２-９ は同じ範囲の重複だった）。
+  return CIRCLED.includes(s) || /^[０-９0-9]+$/.test(s);
 }
 
 function normalizeParaNum(s: string): string {
@@ -406,10 +407,12 @@ export function detectGovLikely(text: string): boolean {
   const s = text || '';
   const articleHits = (s.match(/第[一二三四五六七八九十百千0-9０-９]+条/g) || []).length;
   if (articleHits >= 2) return true;
-  // 条が無くても、行頭に単位なし「第１ 」「第２ 」が並ぶ達・要綱スタイルは行政文書として扱う
-  const headnoteHits = (s.match(/(^|\n)[\s　]*第[一二三四五六七八九十百千0-9０-９]+[\s　]+\S/g) || []).length;
+  // 条が無くても、行頭に単位なし「第１ 」「第２ 」が並ぶ達・要綱スタイルは行政文書として扱う。
+  // 行内の空白は [^\S\n]（改行以外の空白）で取る。\s だと改行を含み (^|\n) と重なるため、
+  // 改行だらけの入力で走査位置が二乗に膨らむ。全角空白は [^\S\n] に含まれる。
+  const headnoteHits = (s.match(/(^|\n)[^\S\n]*第[一二三四五六七八九十百千0-9０-９]+[^\S\n]+\S/g) || []).length;
   if (headnoteHits >= 3) return true;
-  if (/(^|\n)\s*記\s*(\n|$)/.test(s) && RE_DOCNUM.test(s)) return true;
+  if (/(^|\n)[^\S\n]*記[^\S\n]*(\n|$)/.test(s) && RE_DOCNUM.test(s)) return true;
   if (RE_DOCNUM.test(s) && RE_SUBJECT_SUFFIX.test(s)) return true;
   return false;
 }
