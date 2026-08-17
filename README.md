@@ -12,7 +12,11 @@
 [![Node.js 22](https://img.shields.io/badge/Node.js-22-5FA04E?logo=nodedotjs&logoColor=white)](.nvmrc)
 [![PostgreSQL 16+](https://img.shields.io/badge/PostgreSQL-16%2B-4169E1?logo=postgresql&logoColor=white)](docs/setup-guide.md)
 
-[English](README.en.md) ・ [セットアップ](docs/setup-guide.md) ・ [ドキュメント](#ドキュメント) ・ [変更履歴](CHANGELOG.md) ・ [貢献する](CONTRIBUTING.md)
+[English](README.en.md) ・ [セットアップ](docs/setup-guide.md) ・ [画面](#画面) ・ [ドキュメント](#ドキュメント) ・ [変更履歴](CHANGELOG.md) ・ [貢献する](CONTRIBUTING.md)
+
+<br>
+
+<img src="docs/assets/dashboard.png" alt="問い合わせ管理のダッシュボード。KPI・棒グラフ・円グラフのウィジェットが並んでいる" width="100%">
 
 </div>
 
@@ -37,6 +41,31 @@
 | 🤖 **AI連携（任意）** | ローカルLLM（LM Studio・Ollama）でも、クラウドのOpenAI互換APIでも動きます。参照範囲は既定で「なし」 |
 | 🌐 **多言語** | 画面は日本語と英語を切り替えられます。日付・時刻・数値も選択言語に追従します |
 | 📡 **オフライン前提** | 外部への通信なしで完結します。地図もタイルをローカルに置けばオフラインで表示できます |
+
+## 画面
+
+<table>
+<tr>
+<td width="50%">
+<img src="docs/assets/record-list.png" alt="在庫管理アプリのレコード一覧">
+<sub><b>レコード一覧</b> — 一覧・かんばん・カレンダー・進捗・集計グラフをタブで切り替え。「在庫金額」は単価×在庫数の計算フィールドです。</sub>
+</td>
+<td width="50%">
+<img src="docs/assets/board.png" alt="タスク管理アプリのかんばん表示">
+<sub><b>かんばん</b> — 任意の選択項目で列を組み、カードをドラッグして値を更新できます。</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="docs/assets/form-builder.png" alt="アプリ設定のフォームビルダー">
+<sub><b>フォーム設定</b> — 22種類の項目を左から追加し、並べ替えてフォームを組み立てます。</sub>
+</td>
+<td width="50%">
+<img src="docs/assets/templates.png" alt="テンプレート選択ダイアログ">
+<sub><b>テンプレート</b> — 33種類の業務テンプレートと、4アプリが連携するCRMスイートから始められます。</sub>
+</td>
+</tr>
+</table>
 
 ## クイックスタート
 
