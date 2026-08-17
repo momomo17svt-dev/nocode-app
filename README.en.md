@@ -12,7 +12,11 @@ Forms, views, permissions, workflow, dashboards, audit logs, and optional LLM in
 [![Node.js 22](https://img.shields.io/badge/Node.js-22-5FA04E?logo=nodedotjs&logoColor=white)](.nvmrc)
 [![PostgreSQL 16+](https://img.shields.io/badge/PostgreSQL-16%2B-4169E1?logo=postgresql&logoColor=white)](docs/setup-guide.md)
 
-[日本語](README.md) ・ [Setup](docs/setup-guide.md) ・ [Documentation](#documentation) ・ [Changelog](CHANGELOG.md) ・ [Contributing](CONTRIBUTING.md)
+[日本語](README.md) ・ [Setup](docs/setup-guide.md) ・ [Screens](#screens) ・ [Documentation](#documentation) ・ [Changelog](CHANGELOG.md) ・ [Contributing](CONTRIBUTING.md)
+
+<br>
+
+<img src="docs/assets/dashboard.png" alt="An inquiry-tracking dashboard with KPI tiles, a bar chart, and a pie chart" width="100%">
 
 </div>
 
@@ -39,6 +43,33 @@ It starts on a single machine with Docker, even on a network with no route to th
 | 🤖 **AI (optional)** | Works with a local LLM (LM Studio, Ollama) or any cloud OpenAI-compatible API. Data access is off by default |
 | 🌐 **Bilingual UI** | Switch between Japanese and English. Dates, times, and numbers follow the selected language |
 | 📡 **Offline first** | No outbound traffic required. Maps work offline once tiles are cached locally |
+
+## Screens
+
+The interface ships in Japanese and English; these shots are from the Japanese UI.
+
+<table>
+<tr>
+<td width="50%">
+<img src="docs/assets/record-list.png" alt="Record list of an inventory app">
+<sub><b>Record list</b> — list, board, calendar, progress, and chart tabs. The "在庫金額" (stock value) column is a calculated field: unit price × quantity.</sub>
+</td>
+<td width="50%">
+<img src="docs/assets/board.png" alt="Board view of a task app">
+<sub><b>Board</b> — group by any choice field and drag a card to change its value.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="docs/assets/form-builder.png" alt="Form builder in the app settings screen">
+<sub><b>Form builder</b> — add any of 22 field types from the left and reorder them to shape the form.</sub>
+</td>
+<td width="50%">
+<img src="docs/assets/templates.png" alt="Template picker dialog">
+<sub><b>Templates</b> — start from 33 business templates or a four-app CRM suite.</sub>
+</td>
+</tr>
+</table>
 
 ## Quick start
 
