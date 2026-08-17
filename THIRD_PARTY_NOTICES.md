@@ -6,6 +6,12 @@
 
 バックエンドとフロントエンドの依存関係は各`package-lock.json`に固定されています。配布前にライセンス一覧と脆弱性監査を更新してください。
 
+## Lucide（アイコン）
+
+画面のアイコンと`frontend/public/favicon.svg`の稲妻の形はLucide（ISC License）を使用しています。
+
+- https://lucide.dev/license
+
 ## PostgreSQL
 
 PostgreSQLはPostgreSQL Licenseで提供されます。ソースリポジトリにはPostgreSQLバイナリを含めません。別途バイナリを再配布する場合は、その配布物に含まれるライセンスと著作権表示も確認してください。

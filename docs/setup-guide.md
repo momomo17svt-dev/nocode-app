@@ -1,15 +1,40 @@
 # セットアップ手順書
 
-ノーコードAppをWindows 10/11のLAN内・オフライン環境で動かす手順です。通常はDocker版を推奨します。
+*[English version](setup-guide.en.md)*
 
-## Docker版
+ノーコードAppをLAN内・オフライン環境で動かす手順です。OSを問わずDocker版を推奨します。
 
-1. Docker Desktopをインストールして起動します。
-2. `start_docker.bat`を実行します。
-3. 初回に表示される管理者ログインIDとパスワードを安全な場所へ保存します。
-4. <http://localhost:5173>を開きます。
+## Docker版（OS共通）
+
+DockerとComposeプラグインがあれば、Node.jsもPostgreSQLも別途用意する必要はありません。
+
+```bash
+cp .env.example .env
+```
+
+`.env`の`change_me`をすべて置き換えます。
+
+| 変数 | 設定する値 |
+| --- | --- |
+| `POSTGRES_PASSWORD` | 任意の強いパスワード。コンテナ間でのみ使います |
+| `JWT_SECRET` | ランダムな32文字以上。後から変えると全員ログアウトします |
+| `INITIAL_ADMIN_PASSWORD` | 12文字以上。最初の管理者を作るときに一度だけ使います |
+
+`JWT_SECRET`は`openssl rand -hex 32`で作れます。
+
+```bash
+docker compose up -d --build
+```
+
+<http://localhost:5173>を開き、`admin`と設定したパスワードでログインします。管理者は空のDBに対する初回起動時にだけ作成されます。
+
+Windowsでは`start_docker.bat`が上記2手順をまとめて実行し、秘密情報も自動生成するため`.env`を手で編集する必要はありません。停止とログ確認は`stop_docker.bat`と`logs_docker.bat`です。
 
 詳細は[docker-guide.md](docker-guide.md)を参照してください。
+
+### HTTPS終端の背後へ置く場合
+
+前段にTLS終端がある構成では`AUTH_COOKIE_SECURE=true`にします。LAN内のHTTP運用では`false`のままにしてください（`true`にするとブラウザがセッションCookieを保持しません）。
 
 ## DockerなしのWindows版
 

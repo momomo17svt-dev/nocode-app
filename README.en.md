@@ -46,7 +46,13 @@ It starts on a single machine with Docker, even on a network with no route to th
 
 ## Screens
 
-The interface ships in Japanese and English; these shots are from the Japanese UI.
+From picking a template to a record list, a board, a chart, and a dashboard — without writing a
+line of code (29 seconds). The interface ships in Japanese and English; these are from the
+Japanese UI.
+
+<div align="center">
+  <img src="docs/assets/demo.gif" alt="Choosing a template, creating an app, and browsing its list, board, chart, and dashboard" width="100%">
+</div>
 
 <table>
 <tr>
@@ -73,29 +79,36 @@ The interface ships in Japanese and English; these shots are from the Japanese U
 
 ## Quick start
 
-### Docker (recommended)
+### Docker (any OS, recommended)
 
-On Windows, start Docker Desktop and run:
+With Docker and the Compose plugin, you need neither Node.js nor PostgreSQL on the host.
 
-```text
-start_docker.bat
+```bash
+cp .env.example .env
 ```
 
-The first run generates a random database password, JWT secret, and administrator password, and
-prints the administrator credentials **once**. Then open <http://localhost:5173>.
-
-`stop_docker.bat` and `logs_docker.bat` stop the stack and tail its logs.
-
-<details>
-<summary>Starting it manually / on non-Windows hosts</summary>
-
-Copy `.env.example` to `.env`, replace every `change_me` value, and run:
+Replace all three `change_me` values in `.env` (`POSTGRES_PASSWORD`, `JWT_SECRET`,
+`INITIAL_ADMIN_PASSWORD`). `openssl rand -hex 32` produces a suitable secret.
 
 ```bash
 docker compose up -d --build
 ```
 
-</details>
+Open <http://localhost:5173> and sign in as `admin` with the password you set. Stop with
+`docker compose down`; follow logs with `docker compose logs -f backend`.
+
+Full details, including running behind HTTPS, are in the [setup guide](docs/setup-guide.en.md).
+
+### Windows shortcut
+
+On Windows the batch scripts generate the secrets for you, so you never edit `.env` by hand:
+
+```text
+start_docker.bat
+```
+
+The administrator login and password are printed **once** — save them right away.
+`stop_docker.bat` and `logs_docker.bat` stop the stack and tail its logs.
 
 ### Windows without Docker
 
@@ -111,7 +124,9 @@ start_server.bat
 `setup.bat` generates the environment and initial administrator, runs migrations, and builds.
 
 > [!NOTE]
-> The Docker and batch setups both use port 5173, so do not run them at the same time.
+> The Docker and batch setups both use port 5173, so do not run them at the same time. The
+> PostgreSQL instance `setup.bat` creates uses `trust` authentication for local connections — if
+> other people share the machine, use the Docker path instead.
 
 ### Requirements
 
@@ -228,20 +243,22 @@ PostgreSQL, a database backup/restore check, CodeQL analysis, and a dependency a
 
 ## Documentation
 
-Most guides are written in Japanese.
+The two documents you need to run or modify the project are in English. The rest are Japanese —
+translations are welcome, and each one is a well-scoped first contribution.
 
 | Document | Contents |
 | --- | --- |
-| [Setup guide](docs/setup-guide.md) | Windows batch setup and preparing PostgreSQL |
+| **[Setup guide](docs/setup-guide.en.md)** 🇬🇧 | Docker on any OS, the Windows batch path, backups |
+| **[Architecture](docs/architecture.en.md)** 🇬🇧 | Structure, where the interesting logic lives, auth, permissions |
 | [Docker guide](docs/docker-guide.md) | Starting, stopping, and troubleshooting the Docker stack |
 | [Backup and restore](docs/backup-restore-guide.md) | Scheduled and manual backups, verifying a restore |
 | [Offline migration](docs/offline-migration.md) | Moving production data to another PC |
 | [API integration](docs/api-integration.md) | Integration tokens and endpoints |
-| [Architecture](docs/architecture.md) | Overall structure and key design decisions |
 | [Database design](docs/db-design.md) | Tables and indexes |
 | [Permission model](docs/permission-design.md) | App permissions, record scopes, department trees |
 | [Security review](docs/security-review.md) | Authentication, CSRF, uploads, headers |
 | [Known issues](docs/known-issues.md) | Unsupported behaviour and workarounds |
+| **[Roadmap](docs/roadmap.en.md)** 🇬🇧 | What is planned, what is being considered, what will not be built |
 | [Test plan](docs/test-plan.md) | Coverage and automated test layout |
 | [Walkthrough](docs/walkthrough.md) | How to read the main code paths |
 

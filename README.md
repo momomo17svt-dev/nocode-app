@@ -44,6 +44,12 @@
 
 ## 画面
 
+テンプレートを選んでから、レコード一覧・かんばん・集計グラフ・ダッシュボードまで。コードは1行も書いていません（29秒）。
+
+<div align="center">
+  <img src="docs/assets/demo.gif" alt="テンプレートを選んでアプリを作り、一覧・かんばん・集計・ダッシュボードを見るまでの操作" width="100%">
+</div>
+
 <table>
 <tr>
 <td width="50%">
@@ -69,30 +75,33 @@
 
 ## クイックスタート
 
-### Docker（推奨）
+### Docker（OS共通・推奨）
 
-Docker Desktop を起動してから実行します。
+DockerとComposeプラグインがあれば、Node.jsもPostgreSQLも別途用意する必要はありません。
 
-```text
-start_docker.bat
+```bash
+cp .env.example .env
 ```
 
-初回はランダムなDBパスワード・JWT秘密鍵・管理者パスワードを生成し、管理者情報を**一度だけ**画面に表示します。起動後は <http://localhost:5173> を開いてください。
-
-停止とログ確認には `stop_docker.bat` と `logs_docker.bat` を使います。
-
-<details>
-<summary>Windows以外・手動で起動する場合</summary>
-
-`.env.example` を `.env` へコピーし、`change_me` の値をすべて変更してから実行します。
+`.env` の `change_me` を3つとも置き換えます（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）。`JWT_SECRET` は `openssl rand -hex 32` で作れます。
 
 ```bash
 docker compose up -d --build
 ```
 
-</details>
+<http://localhost:5173> を開き、`admin` と設定したパスワードでログインします。停止は `docker compose down`、ログは `docker compose logs -f backend` です。
 
-### Windows・Dockerなし
+### Windows のショートカット
+
+Windowsでは秘密情報の生成まで含めてbatが面倒を見ます。`.env` を手で編集する必要はありません。
+
+```text
+start_docker.bat
+```
+
+管理者のログインIDとパスワードは**一度だけ**画面に表示されるので、その場で保存してください。停止とログ確認は `stop_docker.bat` と `logs_docker.bat` です。
+
+### Docker を使わない場合（Windows）
 
 **PostgreSQL本体はリポジトリに含まれません。** ポータブル版を使う場合は各自で入手して `pgsql/` へ展開するか、`NOCODEAPP_PG_HOME` で場所を指定します。入手先は[セットアップガイド](docs/setup-guide.md)にあります。
 
@@ -104,7 +113,7 @@ start_server.bat
 `setup.bat` は環境設定と初期管理者を安全に生成し、DBマイグレーションとビルドを行います。
 
 > [!NOTE]
-> Docker版とbat版は同じ5173番ポートを使うため、同時には起動しないでください。
+> Docker版とbat版は同じ5173番ポートを使うため、同時には起動しないでください。`setup.bat` が作るPostgreSQLはローカル接続が無認証（trust）になります。同じPCを他の利用者と共有する場合はDocker版を使ってください。
 
 ### 動作要件
 
@@ -204,16 +213,17 @@ Pull Requestでは、両方の `lint`・`build`・単体テスト、実PostgreSQ
 
 | 文書 | 内容 |
 | --- | --- |
-| [セットアップ手順書](docs/setup-guide.md) | Windows bat版の導入、PostgreSQLの用意 |
+| [セットアップ手順書](docs/setup-guide.md)（[EN](docs/setup-guide.en.md)） | OS共通のDocker版、Windows bat版、バックアップ |
 | [Docker起動ガイド](docs/docker-guide.md) | Docker版の起動・停止・トラブル対応 |
 | [バックアップ・復元ガイド](docs/backup-restore-guide.md) | 自動／手動バックアップと復元の確認方法 |
 | [オフライン移行](docs/offline-migration.md) | 本番データを別PCへ移す手順 |
 | [API連携ガイド](docs/api-integration.md) | 外部連携用トークンとエンドポイント |
-| [アーキテクチャ設計](docs/architecture.md) | 全体構成と主要な設計判断 |
+| [アーキテクチャ設計](docs/architecture.md)（[EN](docs/architecture.en.md)） | 全体構成、主要ロジックの在り処、認証と権限 |
 | [データベース設計](docs/db-design.md) | テーブル構成とインデックス |
 | [権限モデル設計](docs/permission-design.md) | アプリ権限・レコード公開範囲・部署ツリー |
 | [セキュリティ設計レビュー](docs/security-review.md) | 認証、CSRF、アップロード、ヘッダー |
 | [既知の課題・制約](docs/known-issues.md) | 未対応の仕様と回避策 |
+| [ロードマップ](docs/roadmap.md)（[EN](docs/roadmap.en.md)） | やる予定・検討中・やらないこと |
 | [テスト計画](docs/test-plan.md) | 検証範囲と自動テストの構成 |
 | [実装ウォークスルー](docs/walkthrough.md) | 主要な処理の読み方 |
 

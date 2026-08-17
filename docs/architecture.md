@@ -1,5 +1,7 @@
 # アーキテクチャ設計
 
+*[English version](architecture.en.md)*
+
 ## 概要
 
 ノーコードAppは、WindowsのLAN内・オフライン環境を主対象とする業務アプリ基盤です。同じプロジェクトフォルダからDocker構成とDockerなしのbat構成を選べます。
