@@ -37,6 +37,11 @@ listed in `CORS_ORIGINS`.
 
 ## Authentication and hardening
 
+While no administrator exists, `GET /api/setup/status` reports `required: true` and the UI routes
+to the first-run setup screen. `POST /api/setup/admin` creates the first SystemAdmin and issues the
+auth cookie straight away. Once an administrator exists the endpoint only answers 403; it carries no
+auth guard, because nobody can sign in before it runs.
+
 On successful login the JWT is written to an HttpOnly, SameSite cookie, and a separate readable
 cookie carries a CSRF token. The frontend attaches the CSRF header to every mutating request.
 Bearer authentication is also accepted for external integrations and tests, but returning a bearer

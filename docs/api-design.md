@@ -11,6 +11,7 @@
 
 ## 主なエンドポイント
 
+- `GET /setup/status`, `POST /setup/admin`（初回セットアップ。管理者が1人もいない間だけ有効）
 - `POST /auth/login`, `POST /auth/logout`, `GET /auth/profile`, `POST /auth/change-password`
 - `GET|POST /apps`, `GET|PUT|DELETE /apps/:id`, `POST /apps/:id/duplicate`
 - `GET|POST|PUT|DELETE /fields`, `/views`, `/app-permissions`

@@ -26,7 +26,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-<http://localhost:5173>を開き、`admin`と設定したパスワードでログインします。管理者は空のDBに対する初回起動時にだけ作成されます。
+<http://localhost:5173>を開くと、管理者がまだいない場合は初回セットアップ画面が出ます。ログインID・表示名・パスワードを決めると、そのままサインインした状態で始まります。この画面は管理者が作成されるまでの間だけ表示されます。
 
 Windowsでは`start_docker.bat`が上記2手順をまとめて実行し、秘密情報も自動生成するため`.env`を手で編集する必要はありません。停止とログ確認は`stop_docker.bat`と`logs_docker.bat`です。
 
