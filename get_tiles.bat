@@ -27,7 +27,9 @@ if "%~1"=="" (
 where docker >nul 2>&1
 if errorlevel 1 goto local
 
-docker compose ps --status running --services 2>nul | findstr /x "backend" >nul 2>&1
+rem Ask the container directly: parsing "docker compose ps" is brittle because its
+rem output uses LF line endings, which findstr does not treat as separate lines.
+docker compose exec -T backend node -e "process.exit(0)" >nul 2>&1
 if errorlevel 1 goto local
 
 echo Downloading through the running backend container...
@@ -55,6 +57,8 @@ if not "%_rc%"=="0" (
 )
 
 :done
+echo %* | findstr /i /c:"--dry-run" >nul
+if not errorlevel 1 exit /b 0
 echo.
 echo Saved under storage\tiles. Pick the style in System settings - Map,
 echo or per location field in the app settings.
