@@ -91,10 +91,27 @@ describe('AuthService', () => {
       prisma.loginThrottle.findUnique
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ attempts: 2, firstFailedAt: new Date(), lockedUntil: null });
-      await expect(service.login('ghost', 'x')).rejects.toMatchObject({ status: 429 });
+      await expect(service.login('ghost', 'x')).rejects.toMatchObject({
+        status: 429,
+        message: 'ログイン試行回数が上限に達しました。あと10分後に再試行してください',
+      });
       expect(prisma.loginThrottle.upsert).toHaveBeenCalledWith(expect.objectContaining({
         update: expect.objectContaining({ attempts: 3, lockedUntil: expect.any(Date) }),
       }));
+    });
+
+    it('ロック中は残り時間を添えて拒否する', async () => {
+      prisma.loginThrottle.findUnique.mockResolvedValue({
+        attempts: 5,
+        firstFailedAt: new Date(),
+        lockedUntil: new Date(Date.now() + 7 * 60_000),
+      });
+      await expect(service.login('admin', 'correct-password')).rejects.toMatchObject({
+        status: 429,
+        message: 'ログイン試行回数が上限に達しました。あと7分後に再試行してください',
+      });
+      // ロック中は照合そのものを行わない。
+      expect(users.findOne).not.toHaveBeenCalled();
     });
   });
 

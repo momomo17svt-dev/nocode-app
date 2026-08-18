@@ -1462,6 +1462,10 @@ const DYNAMIC_PATTERNS: Array<[RegExp, (...matches: string[]) => string]> = [
   [/^(.+)をAIに質問$/, (_, name) => `Ask AI about ${name}`],
   [/^(.+)を解除$/, (_, name) => `Remove ${name}`],
   [/^(\d+)文字以上$/, (_, count) => `${count} characters or more`],
+  [
+    /^ログイン試行回数が上限に達しました。あと(\d+)分後に再試行してください$/,
+    (_, minutes) => `Too many failed sign-in attempts. Try again in ${minutes} minute(s).`,
+  ],
 ];
 
 function preserveWhitespace(source: string, translated: string): string {
