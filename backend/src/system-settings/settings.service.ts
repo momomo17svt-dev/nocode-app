@@ -115,7 +115,12 @@ export class SettingsService implements OnModuleInit {
       throw new BadRequestException('背景地図の指定が不正です');
     }
     const url = String(input.tileUrl || '').trim();
-    if (id === 'custom' && !/^https?:\/\/.*\{z\}.*\{x\}.*\{y\}/i.test(url)) {
+    // 正規表現で `.*` を並べると入力次第で総当たりになる（CodeQL: js/polynomial-redos）。
+    // 判定は前方一致と部分一致だけで足りるので、線形で済む形にしておく。
+    const lower = url.toLowerCase();
+    const isHttpUrl = lower.startsWith('http://') || lower.startsWith('https://');
+    const hasTilePlaceholders = url.includes('{z}') && url.includes('{x}') && url.includes('{y}');
+    if (id === 'custom' && !(isHttpUrl && hasTilePlaceholders)) {
       throw new BadRequestException('カスタムタイルURLは http(s) で {z}/{x}/{y} を含む形式にしてください');
     }
     const policy: MapPolicy = { defaultBasemap: id, tileUrl: id === 'custom' ? url.slice(0, 500) : '' };
