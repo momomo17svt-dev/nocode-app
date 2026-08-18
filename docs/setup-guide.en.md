@@ -81,11 +81,10 @@ Run `setup.bat`. It performs, in order:
 1. Creates `backend/.env` with freshly generated secrets
 2. Initialises PostgreSQL and creates the `nocode_db` database
 3. Applies Prisma migrations
-4. Creates the initial administrator
-5. Builds the backend and verifies frontend dependencies
+4. Builds the backend and verifies frontend dependencies
 
-The administrator password is printed **only** when the environment file is created for the first
-time. There is no fixed default password.
+No administrator is created. Open the app in a browser after starting it and the first-run screen
+asks you to choose a login ID and password. There is no fixed default password.
 
 > [!WARNING]
 > `setup.bat` runs `initdb` without specifying an authentication method, so local connections use

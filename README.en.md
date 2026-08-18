@@ -124,7 +124,8 @@ setup.bat
 start_server.bat
 ```
 
-`setup.bat` generates the environment and initial administrator, runs migrations, and builds.
+`setup.bat` generates the environment, runs migrations, and builds. As with Docker, the
+administrator is created in the browser on the first run.
 
 > [!NOTE]
 > The Docker and batch setups both use port 5173, so do not run them at the same time. The
