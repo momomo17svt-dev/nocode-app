@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TILES_DIR } from '../common/storage.util';
+import { SettingsService } from '../system-settings/settings.service';
 
 const KNOWN_STYLES = ['pale', 'std', 'photo'];
 
@@ -13,9 +14,14 @@ const KNOWN_STYLES = ['pale', 'std', 'photo'];
 @UseGuards(JwtAuthGuard)
 @Controller('api/tiles')
 export class TilesController {
-  /** ダウンロード済みの内蔵タイル種を返す（フロントの背景地図切替で利用可能なものを判定）。 */
+  constructor(private settings: SettingsService) {}
+
+  /**
+   * ダウンロード済みの内蔵タイル種と、システム設定の既定背景地図を返す。
+   * 画面はこれだけで「内蔵タイルが使えるか」「既定はどれか」を判断できる。
+   */
   @Get('styles')
-  styles() {
+  async styles() {
     const present = KNOWN_STYLES.filter((s) => {
       try {
         const dir = path.join(TILES_DIR, s);
@@ -24,6 +30,7 @@ export class TilesController {
         return false;
       }
     });
-    return { styles: present.length ? present : [] };
+    const policy = await this.settings.getMapPolicy();
+    return { styles: present, defaultBasemap: policy.defaultBasemap, tileUrl: policy.tileUrl };
   }
 }

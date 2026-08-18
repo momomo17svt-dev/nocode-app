@@ -7,7 +7,7 @@ import { CurrentUser, type AuthUser } from '../common/decorators/current-user.de
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { BackupService } from './backup.service';
-import { CreateApiTokenDto, UpdateAuthPolicyDto, UpdateBackupPolicyDto } from './dto/system-settings.dto';
+import { CreateApiTokenDto, UpdateAuthPolicyDto, UpdateBackupPolicyDto, UpdateMapPolicyDto } from './dto/system-settings.dto';
 import { SettingsService } from './settings.service';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -30,6 +30,18 @@ export class SystemSettingsController {
   async updateAuthPolicy(@Body() dto: UpdateAuthPolicyDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     const result = await this.settings.saveAuthPolicy(dto);
     await this.audit.log({ userId: user.userId, actionType: 'AUTH_POLICY_UPDATE', targetResource: 'system', details: result, ipAddress: req.ip });
+    return result;
+  }
+
+  @Get('map')
+  getMapPolicy() {
+    return this.settings.getMapPolicy();
+  }
+
+  @Put('map')
+  async updateMapPolicy(@Body() dto: UpdateMapPolicyDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    const result = await this.settings.saveMapPolicy(dto);
+    await this.audit.log({ userId: user.userId, actionType: 'MAP_POLICY_UPDATE', targetResource: 'system', details: result, ipAddress: req.ip });
     return result;
   }
 

@@ -1285,6 +1285,9 @@ function MapTab({ fields, records, appId, onOpen }: {
           </>
         )}
         <span className="badge badge-muted">{markers.length} 件をプロット</span>
+        {sw.activeUnavailable && (
+          <span className="text-xs text-warning">地図タイルが未取得です。右上の切替からオンライン地図を選べます。</span>
+        )}
       </div>
       <MapView
         className={locField?.settings?.height ? mapHeightClass(locField.settings) : 'h-[calc(100vh-14rem)] min-h-[520px]'}

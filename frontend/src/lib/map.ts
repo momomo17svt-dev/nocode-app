@@ -1,3 +1,4 @@
+import { useEffect, useReducer } from 'react';
 import { api } from './api';
 
 /** 位置フィールドの値。緯度・経度と任意ラベル。 */
@@ -89,6 +90,9 @@ export const BASEMAPS: BasemapDef[] = [
   { id: 'custom', label: 'カスタムURL', kind: 'custom' },
 ];
 
+/** フィールド設定で「システム設定に従う」を選んだときの値。 */
+export const SYSTEM_BASEMAP = 'system';
+
 export function getBasemap(id?: string): BasemapDef {
   return BASEMAPS.find((b) => b.id === id) || BASEMAPS[0];
 }
@@ -101,7 +105,7 @@ function tileOrigin(): string {
 export function basemapTileUrl(b: BasemapDef, settings?: any): string | null {
   if (b.kind === 'builtin') return `${tileOrigin()}/tiles/${b.folder}/{z}/{x}/{y}.${b.ext}?v=${TILE_VERSION}`;
   if (b.kind === 'online') return b.url || null;
-  if (b.kind === 'custom') return (settings?.tileUrl || '').trim() || null;
+  if (b.kind === 'custom') return (settings?.tileUrl || '').trim() || _manifest.tileUrl.trim() || null;
   return null; // blank
 }
 
@@ -130,11 +134,16 @@ export function toRuntime(b: BasemapDef, settings?: any): BasemapRuntime {
   };
 }
 
-/** フィールド設定から選択中のベースマップIDを得る（旧 tileUrl 設定にも後方互換）。 */
+/**
+ * フィールド設定から選択中のベースマップIDを得る。
+ * 未指定・「システム設定に従う」なら、システム設定の既定背景を使う（旧 tileUrl 設定にも後方互換）。
+ */
 export function resolveBasemapId(settings: any): string {
-  if (settings?.basemap) return settings.basemap;
-  if ((settings?.tileUrl || '').trim()) return 'custom';
-  return 'pale';
+  const chosen = String(settings?.basemap || '');
+  if (chosen && chosen !== SYSTEM_BASEMAP) return chosen;
+  if (!chosen && (settings?.tileUrl || '').trim()) return 'custom';
+  const fallback = _manifest.defaultBasemap;
+  return BASEMAPS.some((b) => b.id === fallback) ? fallback : 'pale';
 }
 
 /** 設定で選ばれた単一ベースマップの実行時情報。 */
@@ -149,28 +158,76 @@ export function resolveTileUrl(settings: any): string | null {
 
 /* ===================== 利用可能タイル種の取得（マニフェスト） ===================== */
 
-let _stylesCache: Promise<string[]> | null = null;
+/** バックエンドが持つ地図の状態。DL済みの内蔵タイル種と、システム設定の既定背景。 */
+export interface MapManifest {
+  styles: string[];
+  defaultBasemap: string;
+  tileUrl: string;
+}
+
+let _manifest: MapManifest = { styles: [], defaultBasemap: 'pale', tileUrl: '' };
+let _manifestPromise: Promise<MapManifest> | null = null;
+const _manifestListeners = new Set<() => void>();
+
+export function mapManifest(): MapManifest {
+  return _manifest;
+}
+
+/** 取得は1回だけ。設定を保存した直後は force で取り直す。 */
+export function loadMapManifest(force = false): Promise<MapManifest> {
+  if (force) _manifestPromise = null;
+  if (!_manifestPromise) {
+    _manifestPromise = api
+      .get('/tiles/styles')
+      .then((r: any) => {
+        _manifest = {
+          styles: Array.isArray(r?.styles) ? r.styles : [],
+          defaultBasemap: String(r?.defaultBasemap || 'pale'),
+          tileUrl: String(r?.tileUrl || ''),
+        };
+        _manifestListeners.forEach((listener) => listener());
+        return _manifest;
+      })
+      .catch(() => _manifest);
+  }
+  return _manifestPromise;
+}
+
+/** 読み込み後に再描画させるための購読フック。地図を描く画面で使う。 */
+export function useMapManifest(): MapManifest {
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    _manifestListeners.add(rerender);
+    void loadMapManifest();
+    return () => {
+      _manifestListeners.delete(rerender);
+    };
+  }, []);
+  return _manifest;
+}
+
 /** バックエンドにDL済みの内蔵タイル種（pale/std/photo のうち存在するもの）。 */
 export function getAvailableTileStyles(): Promise<string[]> {
-  if (!_stylesCache) {
-    _stylesCache = api.get('/tiles/styles').then((r: any) => (r?.styles as string[]) || ['pale']).catch(() => ['pale']);
-  }
-  return _stylesCache;
+  return loadMapManifest().then((m) => m.styles);
 }
 
 /**
  * 閲覧画面のレイヤ切替に出すベースマップ一覧を組み立てる。
  * DL済みの内蔵種（pale/std/photo）＋グレー/白。設定の既定がオンライン/カスタムならそれも含める。
  */
-export function buildSwitcherBasemaps(settings: any, available: string[]): { list: BasemapRuntime[]; activeId: string } {
+export function buildSwitcherBasemaps(
+  settings: any,
+  available: string[],
+): { list: BasemapRuntime[]; activeId: string; activeUnavailable: boolean } {
   const activeId = resolveBasemapId(settings);
   const ids: string[] = [];
+  // DL済みの内蔵タイルだけを載せる。未取得の種別は選んでも白紙になるため出さない。
   for (const id of ['pale', 'std', 'photo']) if (available.includes(id)) ids.push(id);
-  if (ids.length === 0) ids.push('pale');
-  ids.push('gray', 'white');
+  ids.push('gsi_pale_online', 'gsi_photo_online', 'osm_online', 'gray', 'white');
   if (!ids.includes(activeId)) ids.unshift(activeId);
   const list = ids.map((id) => toRuntime(getBasemap(id), settings));
-  return { list, activeId };
+  const active = getBasemap(activeId);
+  return { list, activeId, activeUnavailable: active.kind === 'builtin' && !available.includes(active.id) };
 }
 
 /* ===================== 中心・ズーム・値判定 ===================== */

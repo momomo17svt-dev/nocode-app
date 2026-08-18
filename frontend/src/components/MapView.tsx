@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { BUILTIN_MAX_NATIVE_ZOOM, DEFAULT_CENTER, DEFAULT_ZOOM, backendTileUrl, type BasemapRuntime } from '../lib/map';
+import { DEFAULT_CENTER, DEFAULT_ZOOM, resolveBasemapRuntime, useMapManifest, type BasemapRuntime } from '../lib/map';
 
 export interface MapMarker {
   id: string;
@@ -93,15 +93,17 @@ export function MapView({
   // 現在の背景の実タイル最大ズーム（自動フィットの寄り過ぎ＝タイル欠け防止に使う）。
   const nativeMaxRef = useRef<number | undefined>(undefined);
 
+  const manifest = useMapManifest();
   // 単一背景指定を含め、内部的には常に「背景マップの配列」で扱う。
   const runtimes: BasemapRuntime[] = useMemo(() => {
     if (basemaps && basemaps.length) return basemaps;
-    const builtin = tileUrl === undefined; // 既定は内蔵（オフライン）タイル
+    // 背景の指定が無ければシステム設定の既定に従う（内蔵タイル／オンライン／カスタム）。
+    if (tileUrl === undefined) return [resolveBasemapRuntime({ basemap: manifest.defaultBasemap, tileUrl: manifest.tileUrl })];
     return [{
-      id: '_single', label: '地図', url: builtin ? backendTileUrl() : tileUrl,
-      attribution, bg: tileBg, maxZoom, maxNativeZoom: builtin ? BUILTIN_MAX_NATIVE_ZOOM : undefined,
+      id: '_single', label: '地図', url: tileUrl,
+      attribution, bg: tileBg, maxZoom, maxNativeZoom: undefined,
     }];
-  }, [basemaps, tileUrl, attribution, tileBg, maxZoom]);
+  }, [basemaps, tileUrl, attribution, tileBg, maxZoom, manifest]);
   const activeId = activeBasemapId || runtimes[0]?.id;
 
   // 地図の生成（マウント時のみ）

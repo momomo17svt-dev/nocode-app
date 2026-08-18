@@ -15,8 +15,31 @@ export interface BackupPolicy {
   retentionDays: number;
 }
 
+/** 地図の既定の背景。アプリのフィールド設定が「システム設定に従う」のときに使われる。 */
+export interface MapPolicy {
+  defaultBasemap: string;
+  tileUrl: string;
+}
+
+/** フロントの BASEMAPS と対応。内蔵タイル / 単色 / オンライン配信 / カスタムURL。 */
+export const BASEMAP_IDS = [
+  'pale',
+  'std',
+  'photo',
+  'gray',
+  'white',
+  'gsi_pale_online',
+  'gsi_photo_online',
+  'osm_online',
+  'custom',
+];
+
 const AUTH_KEY = 'system:auth-policy';
 const BACKUP_KEY = 'system:backup-policy';
+const MAP_KEY = 'system:map-policy';
+// 既定は内蔵タイル（オフライン前提）。タイル未取得の環境では、この設定で
+// オンライン配信へ切り替えられる。勝手に外部通信を始めないよう既定は変えない。
+const MAP_DEFAULTS: MapPolicy = { defaultBasemap: 'pale', tileUrl: '' };
 const AUTH_DEFAULTS: AuthPolicy = {
   maxFailedAttempts: 5,
   lockoutMinutes: 15,
@@ -75,6 +98,33 @@ export class SettingsService implements OnModuleInit {
   async getBackupPolicy(): Promise<BackupPolicy> {
     const row = await this.prisma.setting.findUnique({ where: { key: BACKUP_KEY } });
     return { ...BACKUP_DEFAULTS, ...((row?.value as Partial<BackupPolicy> | undefined) || {}) };
+  }
+
+  async getMapPolicy(): Promise<MapPolicy> {
+    const row = await this.prisma.setting.findUnique({ where: { key: MAP_KEY } });
+    const raw = (row?.value as Partial<MapPolicy> | undefined) || {};
+    const policy = { ...MAP_DEFAULTS, ...raw };
+    // 保存済みの値が未知のIDでも、地図が真っ白にならないよう既定へ戻す。
+    if (!BASEMAP_IDS.includes(policy.defaultBasemap)) policy.defaultBasemap = MAP_DEFAULTS.defaultBasemap;
+    return policy;
+  }
+
+  async saveMapPolicy(input: Partial<MapPolicy>): Promise<MapPolicy> {
+    const id = String(input.defaultBasemap || '').trim();
+    if (!BASEMAP_IDS.includes(id)) {
+      throw new BadRequestException('背景地図の指定が不正です');
+    }
+    const url = String(input.tileUrl || '').trim();
+    if (id === 'custom' && !/^https?:\/\/.*\{z\}.*\{x\}.*\{y\}/i.test(url)) {
+      throw new BadRequestException('カスタムタイルURLは http(s) で {z}/{x}/{y} を含む形式にしてください');
+    }
+    const policy: MapPolicy = { defaultBasemap: id, tileUrl: id === 'custom' ? url.slice(0, 500) : '' };
+    await this.prisma.setting.upsert({
+      where: { key: MAP_KEY },
+      update: { value: policy as any },
+      create: { key: MAP_KEY, value: policy as any },
+    });
+    return policy;
   }
 
   async saveBackupPolicy(input: Partial<BackupPolicy>): Promise<BackupPolicy> {
