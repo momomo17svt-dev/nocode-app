@@ -31,14 +31,25 @@ storage/tiles/
 
 ## タイルの用意方法（インターネットに繋がる環境で実行）
 
-バックエンドの補助スクリプトで、必要な範囲だけまとめてダウンロードできます。
+必要な範囲だけをまとめてダウンロードできます。実行方法は環境に合わせて3通りです。
+
+```text
+get_tiles.bat --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
+```
+
+Windowsはこれだけで済みます（Dockerが動いていればコンテナ内、そうでなければローカルのNode.jsを使います）。
 
 ```bash
+# Docker版
+docker compose exec backend npm run tiles -- --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
+
+# ローカルにNode.jsがある場合
 cd backend
-# 例: 東京駅周辺を ズーム13〜17 で取得（国土地理院 標準地図）
-node scripts/download-tiles.mjs --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
-# = npm run tiles -- --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
+npm run tiles -- --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
 ```
+
+日本全域を市町村境界レベルまで用意するなら `--japan --zoom 0-12`（約14万枚・1GB前後）です。
+まず `--dry-run` を付けて枚数を確認してください。
 
 - `--bbox minLng,minLat,maxLng,maxLat` 取得する地理範囲
 - `--zoom 13-17` または `--zoom 13,15,17` ズーム域

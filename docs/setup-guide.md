@@ -94,6 +94,18 @@ npm ci
 npm run dev -- --host 0.0.0.0
 ```
 
+## 地図（オフラインで使う場合）
+
+背景タイルはリポジトリに含まれません。未取得だと地図の背景が表示されないため、インターネットに接続できる端末で先に取得します。
+
+```text
+get_tiles.bat --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
+```
+
+Docker版は`docker compose exec backend npm run tiles -- --japan --zoom 0-12`でも同じことができます。取得先は`storage/tiles/`で、フォルダごとオフライン端末へ移せます。ズームを1段上げると枚数は約4倍になるので、まず`--dry-run`で見積もってください。配信元の利用規約は[storage/tiles/README.md](../storage/tiles/README.md)にまとめています。
+
+インターネットに接続できる環境なら、「システム設定 → 地図」でオンライン地図を選ぶだけでも表示できます。
+
 ## バックアップ
 
 DBと`storage/attachments/`を必ずセットで保存します。DBダンプや添付は機密情報を含む可能性があるため、Gitへ追加しないでください。

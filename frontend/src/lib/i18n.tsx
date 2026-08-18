@@ -574,8 +574,10 @@ const EN: Record<string, string> = {
   'なし（storage/tilesが空です。backendの npm run tiles で取得できます）':
     'none (storage/tiles is empty; run npm run tiles in backend to fetch them)',
   '地図の設定を保存しました': 'Saved the map settings',
-  '地図タイルが未取得です。右上の切替からオンライン地図を選べます。':
-    'No map tiles are downloaded. Pick an online base map from the control in the top right.',
+  '地図タイルが未取得です。右上の切替でオンライン地図を選ぶか、オフラインで使うならタイルを取得してください（システム設定 → 地図）。':
+    'No map tiles are downloaded. Pick an online base map from the control in the top right, or download tiles for offline use (System settings > Map).',
+  'オフラインで使うには、インターネットに繋がる端末でタイルを取得して`storage/tiles`へ置きます（Windowsは get_tiles.bat、Docker版は docker compose exec backend npm run tiles -- --japan --zoom 0-12）。取得前に配信元の利用規約を確認してください。':
+    'For offline use, download tiles on a machine with internet access and place them in `storage/tiles` (Windows: get_tiles.bat; Docker: docker compose exec backend npm run tiles -- --japan --zoom 0-12). Check the provider terms before downloading.',
   '表示する項目（ラベル）': 'Display field (label)',
   '表示する列': 'Columns to display',
   '文書タイトル': 'Document title',

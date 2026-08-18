@@ -42,7 +42,7 @@ It starts on a single machine with Docker, even on a network with no route to th
 | 🗂 **Audit and recovery** | Audit log of every operation, record restore within 30 days of deletion, and optimistic locking on updates |
 | 🤖 **AI (optional)** | Works with a local LLM (LM Studio, Ollama) or any cloud OpenAI-compatible API. Data access is off by default |
 | 🌐 **Bilingual UI** | Switch between Japanese and English. Dates, times, and numbers follow the selected language |
-| 📡 **Offline first** | No outbound traffic required. Maps work offline once tiles are cached locally |
+| 📡 **Offline first** | No outbound traffic required. Maps work offline once tiles are fetched with `get_tiles.bat` |
 
 ## Screens
 
@@ -112,6 +112,26 @@ start_docker.bat
 
 Then open <http://localhost:5173> and create the administrator account on the first-run
 screen. `stop_docker.bat` and `logs_docker.bat` stop the stack and tail its logs.
+
+### Using maps offline
+
+Map tiles are large, so they are **not** part of the repository. Until you fetch them, location
+fields show pins on a blank background. Download the area you need on a machine with internet
+access:
+
+```text
+get_tiles.bat --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
+```
+
+```bash
+docker compose exec backend npm run tiles -- --japan --zoom 0-12
+```
+
+Tiles land in `storage/tiles/`, so you can carry that folder to the offline machine. Start with
+`--dry-run` to count the tiles, and check the [provider terms](storage/tiles/README.md) first.
+
+If the machine does have internet access, you can skip the download and pick an online base map
+under **System settings > Map** instead.
 
 ### Windows without Docker
 

@@ -38,6 +38,9 @@ COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/prisma ./prisma
 COPY --from=build --chown=node:node /app/prisma.config.ts ./prisma.config.ts
 COPY --from=build --chown=node:node /app/package.json ./package.json
+# オフライン地図タイルの取得スクリプト。Docker版でも
+# docker compose exec backend npm run tiles -- ... で実行できるようにする。
+COPY --chown=node:node scripts ./scripts
 COPY --chown=node:node docker-entrypoint.sh ./docker-entrypoint.sh
 
 RUN chmod +x /app/docker-entrypoint.sh
