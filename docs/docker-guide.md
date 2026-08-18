@@ -9,13 +9,22 @@
 3. 初回に表示される管理者情報を保存します。
 4. <http://localhost:5173>を開きます。
 
-初回は`.env`へランダムなDBパスワード、JWT秘密鍵、管理者パスワードを生成します。
+初回は`.env`へランダムなDBパスワード、JWT秘密鍵、管理者パスワードを生成します。`.env`を先にコピーしてある場合も、`change_me`のまま残っている値は生成値へ置き換えます（DBパスワードだけは後述の理由で既存ボリュームがあるときは変更しません）。
 
 手動起動では`.env.example`を`.env`へコピーし、`change_me`を変更してから実行してください。
 
 ```powershell
 docker compose up -d --build
 ```
+
+## 起動しないとき
+
+`dependency failed to start: container nocode-app-backend-1 is unhealthy`で止まったら、まず`docker compose logs backend`を読みます。
+
+- `Set INITIAL_ADMIN_PASSWORD to a unique password of 12 or more characters`
+  `.env`が`.env.example`のままです。バックエンドは初期管理者を作れずに終了し、再起動を繰り返すためヘルスチェックが通りません。Windowsは`start_docker.bat`を実行すれば残ったプレースホルダを置き換えます。他の環境では`.env`の`change_me`を書き換えて起動し直してください。
+- `password authentication failed for user "postgres"`
+  `.env`の`POSTGRES_PASSWORD`と、既存DBボリュームの作成時パスワードが食い違っています。PostgreSQLはデータディレクトリの初期化時にしか`POSTGRES_PASSWORD`を読まないため、後から`.env`だけ変えても反映されません。作成時の値へ戻すか、バックアップのうえでDBを作り直します（`docker compose down -v`はデータを削除します）。
 
 ## 停止とログ
 
