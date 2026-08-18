@@ -143,6 +143,10 @@ if ($Mode -eq 'Docker') {
     $configuredVolume = Get-EnvValue $target 'POSTGRES_VOLUME_NAME'
     if ($configuredVolume) { $volumeName = $configuredVolume }
 
+    # A brand new .env carries a brand new DB password. A volume left over from an
+    # earlier .env still expects the old one, and nothing here can recover it.
+    if ($created -and (Test-DockerVolume $volumeName)) { $dbPasswordGuessed = $true }
+
     # A .env copied by hand from .env.example keeps its empty secrets (older copies keep
     # the change_me placeholders), and Add-MissingLines never touches a key that already
     # exists. Fill in what compose and the backend refuse to start on.
@@ -209,9 +213,9 @@ if ($dbPasswordKept) {
 }
 
 if ($dbPasswordGuessed) {
-    Write-Warning "POSTGRES_PASSWORD was empty, so a new one was generated, but volume $volumeName already exists."
+    Write-Warning "A new POSTGRES_PASSWORD was generated, but volume $volumeName already exists."
     Write-Warning 'PostgreSQL keeps the password its data directory was created with, so the new value may not match.'
-    Write-Warning 'If the backend reports password authentication failed, restore the original value, or run:'
+    Write-Warning 'If the backend reports password authentication failed, restore the previous value, or run:'
     Write-Warning '  docker compose down -v   (this deletes the local database)'
 }
 
