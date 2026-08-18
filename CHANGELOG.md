@@ -6,6 +6,11 @@
 
 （次のリリースへ向けた変更をここに記録します。予定は[ロードマップ](docs/roadmap.md)を参照してください。）
 
+### Fixed
+
+- `.env.example`をコピーしただけの`.env`でDockerが起動できない問題を修正。`start_docker.bat`（`scripts/initialize-env.ps1`）が、`change_me`のまま残ったJWT秘密鍵と初期管理者パスワードを生成値へ置き換えるようにした。DBパスワードは既存ボリュームでは変更できないため、置き換えずに対処方法を警告する
+- 初期セットアップに失敗したバックエンドコンテナが、`container ... is unhealthy`だけを残して再起動し続ける状態を改善。`.env`のプレースホルダが原因であることと対処をログへ出すようにした
+
 ### Security
 
 - `prisma`が間接的に依存する`deepmerge-ts`を8系へ上げ、`npm audit`のhigh 3件を解消（GHSA-ggr8-5vv4-36mx: 再帰的なオブジェクトのマージでスタックが枯渇する）。prisma側に修正版がないため`overrides`で指定している

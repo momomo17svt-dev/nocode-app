@@ -17,7 +17,15 @@ echo "Applying Prisma migrations..."
 npx --no-install prisma migrate deploy
 
 echo "Ensuring the initial administrator exists..."
-node dist/prisma/seed.js
+if ! node dist/prisma/seed.js; then
+  echo "" >&2
+  echo "Initial setup failed, so this container will keep restarting and stay unhealthy." >&2
+  echo "If the error above mentions INITIAL_ADMIN_PASSWORD or JWT_SECRET, .env still holds" >&2
+  echo "the change_me placeholders that .env.example ships with." >&2
+  echo "  Windows: run start_docker.bat, which fills those values in for you." >&2
+  echo "  Other  : replace them in .env, then run docker compose up -d again." >&2
+  exit 1
+fi
 
 echo "Starting backend..."
 exec node dist/src/main.js

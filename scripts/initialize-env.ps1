@@ -49,16 +49,68 @@ function Add-MissingLines([string]$Path, [hashtable]$Values) {
     }
 }
 
+function Get-EnvValue([string]$Path, [string]$Key) {
+    if (-not (Test-Path -LiteralPath $Path)) { return '' }
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        if ($line -match ('^\s*' + $Key + '\s*=(.*)')) { return $Matches[1].Trim() }
+    }
+    return ''
+}
+
+function Set-EnvValue([string]$Path, [string]$Key, [string]$Value) {
+    $lines = @(Get-Content -LiteralPath $Path)
+    $replaced = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if (-not $replaced -and $lines[$i] -match ('^\s*' + $Key + '\s*=')) {
+            $lines[$i] = "$Key=$Value"
+            $replaced = $true
+        }
+    }
+    if (-not $replaced) { $lines += "$Key=$Value" }
+    $text = ($lines -join [Environment]::NewLine) + [Environment]::NewLine
+    [System.IO.File]::WriteAllText($Path, $text, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+# The backend refuses to start on the values shipped in .env.example, so treat them as absent.
+function Test-PlaceholderValue([string]$Value, [int]$MinLength) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $true }
+    $trimmed = $Value.Trim()
+    if ($trimmed -match 'change_me') { return $true }
+    if ($trimmed.ToLowerInvariant() -eq 'password123') { return $true }
+    if ($trimmed.Length -lt $MinLength) { return $true }
+    return $false
+}
+
+function Repair-Secret([string]$Path, [string]$Key, [int]$MinLength, [string]$NewValue) {
+    if (-not (Test-PlaceholderValue (Get-EnvValue $Path $Key) $MinLength)) { return $false }
+    Set-EnvValue $Path $Key $NewValue | Out-Null
+    return $true
+}
+
+function Test-DockerVolume([string]$Name) {
+    # 'docker volume inspect' writes to stderr when the volume is absent, and Windows
+    # PowerShell turns that into a terminating error under $ErrorActionPreference='Stop'.
+    # Listing by name stays silent, so a machine without the volume still works.
+    $found = & docker volume ls --quiet --filter ('name=' + $Name)
+    if ($LASTEXITCODE -ne 0) { return $false }
+    foreach ($line in @($found)) {
+        if ($line -and $line.Trim() -eq $Name) { return $true }
+    }
+    return $false
+}
+
 $adminPassword = New-RandomHex 18
 $jwtSecret = New-RandomHex 32
+$adminGenerated = $false
+$jwtReplaced = $false
+$dbPasswordKept = $false
+$volumeName = 'nocode-app_postgres_data'
 
 if ($Mode -eq 'Docker') {
     $target = Join-Path $ProjectRoot '.env'
     $created = -not (Test-Path -LiteralPath $target)
-    $volumeName = 'nocode-app_postgres_data'
-    if (-not $created) {
-        & docker volume inspect antigravity-nocode_postgres_data *> $null
-        if ($LASTEXITCODE -eq 0) { $volumeName = 'antigravity-nocode_postgres_data' }
+    if (-not $created -and (Test-DockerVolume 'antigravity-nocode_postgres_data')) {
+        $volumeName = 'antigravity-nocode_postgres_data'
     }
     Add-MissingLines $target ([ordered]@{
         APP_PORT = $AppPort
@@ -85,6 +137,26 @@ if ($Mode -eq 'Docker') {
         LLM_API_KEY = ''
         LLM_API_KEY_HEADER = 'authorization'
     })
+
+    # compose.yaml names the volume from .env, so honour whatever is written there.
+    $configuredVolume = Get-EnvValue $target 'POSTGRES_VOLUME_NAME'
+    if ($configuredVolume) { $volumeName = $configuredVolume }
+
+    # A .env copied by hand from .env.example keeps every change_me placeholder, and
+    # Add-MissingLines never touches a key that already exists. Replace the secrets the
+    # backend rejects, otherwise its seed step fails and the container restarts forever.
+    $jwtReplaced = Repair-Secret $target 'JWT_SECRET' 32 $jwtSecret
+    $adminGenerated = $created -or (Repair-Secret $target 'INITIAL_ADMIN_PASSWORD' 12 $adminPassword)
+    if (Test-PlaceholderValue (Get-EnvValue $target 'POSTGRES_PASSWORD') 12) {
+        if (Test-DockerVolume $volumeName) {
+            # PostgreSQL reads POSTGRES_PASSWORD only while it initializes its data
+            # directory. Rotating it against an existing volume just breaks the login.
+            $dbPasswordKept = $true
+        }
+        else {
+            Set-EnvValue $target 'POSTGRES_PASSWORD' (New-RandomHex 24)
+        }
+    }
 }
 else {
     $target = Join-Path $ProjectRoot 'backend\.env'
@@ -109,13 +181,34 @@ else {
         LLM_API_KEY = ''
         LLM_API_KEY_HEADER = 'authorization'
     })
+
+    # setup.bat runs initdb without authentication, so the bundled server expects this URL.
+    if ((Get-EnvValue $target 'DATABASE_URL') -match 'change_me') {
+        Set-EnvValue $target 'DATABASE_URL' 'postgresql://postgres:postgres@127.0.0.1:5432/nocode_db?schema=public'
+    }
+    $jwtReplaced = Repair-Secret $target 'JWT_SECRET' 32 $jwtSecret
+    $adminGenerated = $created -or (Repair-Secret $target 'INITIAL_ADMIN_PASSWORD' 12 $adminPassword)
 }
 
-if ($created) {
+if ($jwtReplaced) {
+    Write-Host 'Replaced the placeholder JWT_SECRET with a generated value.'
+}
+
+if ($dbPasswordKept) {
+    Write-Warning "POSTGRES_PASSWORD is still the .env.example placeholder, but volume $volumeName already exists."
+    Write-Warning 'PostgreSQL keeps the password its data directory was created with, so .env is left as is.'
+    Write-Warning 'To start over with a generated password (this deletes the local database):'
+    Write-Warning '  docker compose down -v'
+}
+
+if ($adminGenerated) {
+    $adminLogin = Get-EnvValue $target 'INITIAL_ADMIN_LOGIN'
+    if (-not $adminLogin) { $adminLogin = 'admin' }
     Write-Host 'Initial administrator credentials (shown once):'
-    Write-Host '  Login    : admin'
-    Write-Host "  Password : $adminPassword"
+    Write-Host "  Login    : $adminLogin"
+    Write-Host ("  Password : {0}" -f (Get-EnvValue $target 'INITIAL_ADMIN_PASSWORD'))
     Write-Host "  Saved in : $target"
+    Write-Host '  Used only while that administrator does not exist in the database yet.'
 }
 else {
     Write-Host "Configuration ready: $target"
