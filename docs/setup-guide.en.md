@@ -121,6 +121,22 @@ npm ci
 npm run dev -- --host 0.0.0.0
 ```
 
+## Maps (for offline use)
+
+Background tiles are not part of the repository, so the map shows no background until you fetch
+them. Download them on a machine with internet access:
+
+```text
+get_tiles.bat --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
+```
+
+The Docker equivalent is `docker compose exec backend npm run tiles -- --japan --zoom 0-12`. Tiles
+are written to `storage/tiles/`, which you can copy to the offline machine as a whole. Each extra
+zoom level is roughly four times the tiles, so run `--dry-run` first. Provider terms are listed in
+[storage/tiles/README.md](../storage/tiles/README.md).
+
+With internet access you can skip this and pick an online base map under **System settings > Map**.
+
 ## Backups
 
 Always save the database and `storage/attachments/` together — a database dump alone cannot restore

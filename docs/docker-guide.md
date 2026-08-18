@@ -49,7 +49,17 @@ docker compose up -d --build
 背景地図の既定は内蔵タイル（`storage/tiles/`）ですが、タイルはリポジトリに含まれていません。未取得のままだとピンだけが表示され、背景が出ません。対処は2つです。
 
 - **オンライン地図に切り替える**: システム設定 → 地図 → 既定の背景地図（国土地理院／OpenStreetMap）。閲覧画面の地図右上でも、利用者がその場で切り替えられます。
-- **タイルを取得する**: インターネットに接続できる端末で `cd backend && npm run tiles -- --bbox 139.74,35.65,139.80,35.70 --zoom 13-17`。取得後は`storage/tiles/`をそのまま移設できます。配信元の利用規約を確認してください（[storage/tiles/README.md](../storage/tiles/README.md)）。
+- **タイルを取得する（オフライン運用はこちら）**: インターネットに接続できる端末で次のいずれかを実行します。取得後は`storage/tiles/`をフォルダごとオフライン端末へ移せます。
+
+  ```text
+  get_tiles.bat --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
+  ```
+
+  ```bash
+  docker compose exec backend npm run tiles -- --japan --zoom 0-12
+  ```
+
+  枚数はズームを1段上げるごとに約4倍になるため、まず`--dry-run`で見積もってください。配信元の利用規約の確認も必要です（[storage/tiles/README.md](../storage/tiles/README.md)）。
 
 ## 停止とログ
 

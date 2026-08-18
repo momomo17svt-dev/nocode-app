@@ -17,7 +17,7 @@ GitHubの公開ソースZIPには、依存物、PostgreSQLバイナリ、地図�
 1. `export-db.bat`を実行して`migration/nocode_db.sql`を作成します。Docker版が起動中ならDockerのDBを、それ以外ではbat版のDBを自動判定します。
 2. `storage/attachments/`をコピーします。
 3. `backend/.env`を安全にコピーします。
-4. 必要なら`storage/tiles/`をコピーします。
+4. 地図を使う場合は`storage/tiles/`をコピーします。空のままだと背景が表示されません（オンライン地図は閉域網では届きません）。タイルが未取得なら、移設元のインターネット接続がある端末で`get_tiles.bat --japan --zoom 0-12`などを実行してから移します。
 
 ## 移設先での構築
 

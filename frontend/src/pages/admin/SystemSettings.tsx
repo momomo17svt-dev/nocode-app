@@ -283,8 +283,13 @@ export function SystemSettings() {
             )}
           </div>
           <p className="text-xs text-muted mt-3">
-            取得済みの内蔵タイル: {tileStyles.length ? tileStyles.map((id) => getBasemap(id).label).join('・') : 'なし（storage/tilesが空です。backendの npm run tiles で取得できます）'}
+            取得済みの内蔵タイル: {tileStyles.length ? tileStyles.map((id) => getBasemap(id).label).join('・') : 'なし'}
           </p>
+          {tileStyles.length === 0 && (
+            <p className="text-xs text-muted mt-1">
+              オフラインで使うには、インターネットに繋がる端末でタイルを取得して`storage/tiles`へ置きます（Windowsは get_tiles.bat、Docker版は docker compose exec backend npm run tiles -- --japan --zoom 0-12）。取得前に配信元の利用規約を確認してください。
+            </p>
+          )}
           <div className="mt-4 flex justify-end"><Button variant="primary" icon={<Save className="size-4" />} loading={savingMap} onClick={saveMap}>保存</Button></div>
         </section>
       )}

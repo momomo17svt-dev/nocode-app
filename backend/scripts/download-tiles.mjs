@@ -8,6 +8,8 @@
  *
  * 使い方:
  *   node scripts/download-tiles.mjs --bbox 139.74,35.65,139.80,35.70 --zoom 13-17
+ *   （Docker版: docker compose exec backend npm run tiles -- --bbox ... --zoom 13-17）
+ *   （Windows : get_tiles.bat --bbox ... --zoom 13-17）
  *
  * 全国(市町村境界まで)の例:
  *   node scripts/download-tiles.mjs --japan --zoom 0-12     （約14万枚/1GB前後）
@@ -106,7 +108,12 @@ async function main() {
   const styleName = String(args.style || (args.source ? 'custom' : 'pale'));
   const ext = /\.jpe?g(\?|$)/i.test(source) ? 'jpg' : 'png';
   // 出力先: storage/tiles/<種別>/  （--out で明示指定も可）
-  const baseTiles = process.env.TILES_DIR || resolve(__dirname, '..', '..', 'storage', 'tiles');
+  // コンテナ内では STORAGE_DIR=/data/storage が入っているので、そこを配信先とみなす。
+  const baseTiles =
+    process.env.TILES_DIR ||
+    (process.env.STORAGE_DIR
+      ? resolve(process.env.STORAGE_DIR, 'tiles')
+      : resolve(__dirname, '..', '..', 'storage', 'tiles'));
   const outDir = args.out ? resolve(String(args.out)) : resolve(baseTiles, styleName);
   const concurrency = Math.max(1, Number(args.concurrency) || 4);
   const delay = Number(args.delay ?? 80);
