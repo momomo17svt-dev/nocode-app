@@ -14,7 +14,8 @@ containers.
 cp .env.example .env
 ```
 
-Open `.env` and replace **every** `change_me` value:
+Open `.env` and fill in **every** empty value. Left empty, `docker compose` stops and names
+the variable it needs:
 
 | Variable | What to put there |
 | --- | --- |
@@ -100,7 +101,8 @@ Windows Firewall.
 
 ## Manual setup (development)
 
-Copy `backend/.env.example` to `backend/.env` and replace every `change_me` with a safe value.
+Copy `backend/.env.example` to `backend/.env` and fill in the empty values (`JWT_SECRET` and
+`INITIAL_ADMIN_PASSWORD`) with safe ones.
 
 ```bash
 cd backend

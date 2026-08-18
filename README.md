@@ -83,7 +83,7 @@ DockerとComposeプラグインがあれば、Node.jsもPostgreSQLも別途用�
 cp .env.example .env
 ```
 
-`.env` の `change_me` を3つとも置き換えます（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）。`JWT_SECRET` は `openssl rand -hex 32` で作れます。
+`.env` の空欄3つ（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）を埋めます。`JWT_SECRET` は `openssl rand -hex 32` で作れます。空のままだと、`docker compose` がどの変数か名前を挙げて起動を止めます。
 
 ```bash
 docker compose up -d --build

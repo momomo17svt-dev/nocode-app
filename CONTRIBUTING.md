@@ -18,7 +18,7 @@ you are comfortable with. See [Where to start](#where-to-start--はじめの一�
 Docker とComposeプラグインがあれば、Node.jsもPostgreSQLも別途要りません。
 
 ```bash
-cp .env.example .env      # change_me を3つとも置き換える
+cp .env.example .env      # 空欄3つ（DBパスワード・JWT秘密鍵・管理者パスワード）を埋める
 docker compose up -d --build
 ```
 
@@ -65,7 +65,7 @@ Everything above in English, briefly.
 - Pick something from [good first issue](https://github.com/momomo17svt-dev/nocode-app/labels/good%20first%20issue),
   or see the [roadmap](docs/roadmap.en.md) for what is planned and how large each item is.
 - The [architecture guide](docs/architecture.en.md) tells you which file holds which logic.
-- `cp .env.example .env`, fill in the three `change_me` values, then `docker compose up -d --build`.
+- `cp .env.example .env`, fill in the three empty values, then `docker compose up -d --build`.
 - Before opening a PR, run lint, build, and tests for both packages (commands above), plus
   `npm run i18n:audit` in `frontend/` if you touched any UI string.
 - Two things bite newcomers: the formula evaluator exists **twice** (`compute.util.ts` and

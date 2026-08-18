@@ -10,6 +10,8 @@
 
 - `.env.example`をコピーしただけの`.env`でDockerが起動できない問題を修正。`start_docker.bat`（`scripts/initialize-env.ps1`）が、`change_me`のまま残ったJWT秘密鍵と初期管理者パスワードを生成値へ置き換えるようにした。DBパスワードは既存ボリュームでは変更できないため、置き換えずに対処方法を警告する
 - 初期セットアップに失敗したバックエンドコンテナが、`container ... is unhealthy`だけを残して再起動し続ける状態を改善。`.env`のプレースホルダが原因であることと対処をログへ出すようにした
+- `.env.example`の秘密情報3つ（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）を空欄にし、埋め忘れたまま`docker compose up`するとビルド前に変数名を挙げて止まるようにした。従来のプレースホルダ（`change_me...`）はseedを通過したあとJWT検証で落ちるため、`unhealthy`としか分からなかった
+- 古い`.env`で`JWT_SECRET`がプレースホルダのままの場合に、バックエンドのentrypointが起動直後に理由と対処を表示して終了するようにした（Nodeのスタックトレースを読まなくて済む）
 
 ### Security
 

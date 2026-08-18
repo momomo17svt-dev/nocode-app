@@ -12,7 +12,7 @@ DockerとComposeプラグインがあれば、Node.jsもPostgreSQLも別途用�
 cp .env.example .env
 ```
 
-`.env`の`change_me`をすべて置き換えます。
+`.env`の空欄をすべて埋めます。空のままだと、`docker compose`がどの変数か名前を挙げて起動を止めます。
 
 | 変数 | 設定する値 |
 | --- | --- |
@@ -78,7 +78,7 @@ bat版のバックエンドは3001番、フロントエンドは5173番を使用
 
 ## 手動セットアップ
 
-`backend/.env.example`を`backend/.env`へコピーし、`change_me`をすべて安全な値へ変更します。
+`backend/.env.example`を`backend/.env`へコピーし、空欄（`JWT_SECRET`と`INITIAL_ADMIN_PASSWORD`）を安全な値で埋めます。
 
 ```bash
 cd backend
