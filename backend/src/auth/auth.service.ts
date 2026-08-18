@@ -79,10 +79,22 @@ export class AuthService {
     return createHash('sha256').update(`${loginId.trim().toLowerCase()}|${ipAddress}`).digest('hex');
   }
 
+  /**
+   * ロック中は残り時間を返す。「時間を置いて」だけでは、正しいパスワードを入れても
+   * 弾かれる状態がいつ終わるのか分からず、ロックされたことにも気づけないため。
+   */
+  private lockedOut(lockedUntil: Date): HttpException {
+    const minutes = Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60_000));
+    return new HttpException(
+      `ログイン試行回数が上限に達しました。あと${minutes}分後に再試行してください`,
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
   private async assertNotLocked(key: string): Promise<void> {
     const row = await this.prisma.loginThrottle.findUnique({ where: { key } });
     if (row?.lockedUntil && row.lockedUntil.getTime() > Date.now()) {
-      throw new HttpException('ログイン試行回数が上限に達しました。時間を置いて再試行してください', HttpStatus.TOO_MANY_REQUESTS);
+      throw this.lockedOut(row.lockedUntil);
     }
   }
 
@@ -101,7 +113,7 @@ export class AuthService {
       create: { key, attempts, firstFailedAt: now, lockedUntil },
     });
     if (lockedUntil) {
-      throw new HttpException('ログイン試行回数が上限に達しました。時間を置いて再試行してください', HttpStatus.TOO_MANY_REQUESTS);
+      throw this.lockedOut(lockedUntil);
     }
   }
 }

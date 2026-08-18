@@ -27,8 +27,22 @@ docker compose up -d --build
   古い`.env`に`change_me`が残っています。`openssl rand -hex 32`などで固有の値を設定してください。この値を変えると、発行済みのログインCookieはすべて無効になります。
 - `INITIAL_ADMIN_PASSWORD is set but unusable`
   無人セットアップ用に値を入れたものの、12文字未満かプレースホルダのままです。空にすれば初回アクセス時にブラウザで管理者を作成できます。自動作成したい場合は12文字以上を設定してください。
-- `password authentication failed for user "postgres"`
-  `.env`の`POSTGRES_PASSWORD`と、既存DBボリュームの作成時パスワードが食い違っています。PostgreSQLはデータディレクトリの初期化時にしか`POSTGRES_PASSWORD`を読まないため、後から`.env`だけ変えても反映されません。作成時の値へ戻すか、バックアップのうえでDBを作り直します（`docker compose down -v`はデータを削除します）。
+- `PostgreSQL rejected the credentials from .env`
+  `.env`の`POSTGRES_PASSWORD`と、既存DBボリュームの作成時パスワードが食い違っています。PostgreSQLはデータディレクトリの初期化時にしか`POSTGRES_PASSWORD`を読まないため、後から`.env`だけ変えても反映されません。作成時の値へ戻すか、バックアップのうえでDBを作り直します（`docker compose down -v`はデータを削除します）。バックエンドは待たずにこのメッセージを出して終了します。
+- `PostgreSQL did not become ready in time`
+  DBコンテナが起動していないか、接続先が違います。最後の接続エラーが同じログに出るので、そこを手掛かりにしてください。
+
+## ログインできないとき
+
+- `ログイン試行回数が上限に達しました。あと◯分後に再試行してください`
+  既定では**5回失敗すると15分**、そのログインIDとIPの組み合わせがロックされます。この間は正しいパスワードでも拒否されます。回数と時間は管理画面の「システム設定」で変更できます。
+  待たずに解除する場合は、DBのロック記録を消します。
+
+  ```powershell
+  docker compose exec db psql -U postgres -d nocode_db -c "DELETE FROM \"LoginThrottle\";"
+  ```
+
+- 管理者のパスワードが分からなくなった場合は、DBを作り直すと初回セットアップ画面からやり直せます（`docker compose down -v`は業務データも削除します）。
 
 ## 停止とログ
 

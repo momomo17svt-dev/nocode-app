@@ -13,13 +13,40 @@ case "${JWT_SECRET:-}" in
     ;;
 esac
 
+# Swallowing the connection error makes a rejected password look like "still starting up",
+# and the wait only ends two minutes later with a misleading message. Exit code 2 marks
+# the errors that waiting can never fix.
+probe_postgres() {
+  node -e "
+const { Client } = require('pg');
+const client = new Client({ connectionString: process.env.DATABASE_URL });
+client
+  .connect()
+  .then(() => client.end())
+  .then(() => process.exit(0))
+  .catch((error) => {
+    process.stderr.write((error.code ? error.code + ' ' : '') + (error.message || String(error)) + '\n');
+    process.exit(error.code === '28P01' || error.code === '28000' ? 2 : 1);
+  });
+"
+}
+
 echo "Waiting for PostgreSQL..."
 attempt=0
-until node -e "const {Client}=require('pg'); const client=new Client({connectionString:process.env.DATABASE_URL}); client.connect().then(()=>client.end()).then(()=>process.exit(0)).catch(()=>process.exit(1));"
-do
+until db_error=$(probe_postgres 2>&1); do
+  status=$?
+  if [ "$status" -eq 2 ]; then
+    echo "PostgreSQL rejected the credentials from .env:" >&2
+    echo "  $db_error" >&2
+    echo "PostgreSQL only reads POSTGRES_PASSWORD while it creates its data directory, so a" >&2
+    echo "changed password never reaches an existing volume. Restore the previous value, or" >&2
+    echo "start the database over with: docker compose down -v   (this deletes its data)." >&2
+    exit 1
+  fi
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 60 ]; then
-    echo "PostgreSQL did not become ready in time." >&2
+    echo "PostgreSQL did not become ready in time. Last error:" >&2
+    echo "  $db_error" >&2
     exit 1
   fi
   sleep 2
