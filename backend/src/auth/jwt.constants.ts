@@ -1,6 +1,9 @@
+let sampleSecretWarned = false;
+
 /**
  * JWT 署名鍵を環境変数から取得する（auth.module と jwt.strategy で同一値を共有）。
  * 未設定・空・既定プレースホルダのままなら起動時に例外で停止する（フェイルファスト）。
+ * .env.example のサンプル値（sample_only...）は起動できるが、公開値なので警告を出す。
  * かつてのハードコード fallback ('super_secret_key_123') は撤去済み:
  * 鍵が漏れた状態で起動すると任意ユーザーのトークンを偽造できてしまうため。
  */
@@ -14,6 +17,16 @@ export function getJwtSecret(): string {
   if (secret.startsWith('change_me')) {
     throw new Error(
       'JWT_SECRET が初期プレースホルダ（change_me...）のままです。固有のランダム値へ変更してください。',
+    );
+  }
+  // .env.example のサンプル値は公開されている。動きはするが、この鍵を知っている人は
+  // 誰でもトークンを偽造できるので、他の端末から届く場所へ置く前に必ず差し替える。
+  // getJwtSecret は auth.module と jwt.strategy の両方から呼ばれるため、警告は一度だけ出す。
+  if (secret.startsWith('sample_only') && !sampleSecretWarned) {
+    sampleSecretWarned = true;
+    console.warn(
+      '[警告] JWT_SECRET が .env.example のサンプル値のままです。この値は公開されています。' +
+        'LAN内の他端末やインターネットへ公開する前に、固有のランダム値へ変更してください（例: openssl rand -hex 32）。',
     );
   }
   return secret;
