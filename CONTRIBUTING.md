@@ -22,6 +22,8 @@ cp .env.example .env      # そのまま起動できる。sample_only_ の秘密
 docker compose up -d --build
 ```
 
+<http://localhost:5173> を開くと初回セットアップ画面が出るので、そこで管理者アカウントを作ります。
+
 コードを直接いじる場合は[セットアップ手順書](docs/setup-guide.md)（[English](docs/setup-guide.en.md)）の「手動セットアップ」を参照してください。
 
 ## 開発手順

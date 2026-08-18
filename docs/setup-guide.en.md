@@ -30,8 +30,9 @@ A straight copy of `.env` already runs. The two secrets are `sample_only_` value
 docker compose up -d --build
 ```
 
-Then open <http://localhost:5173> and sign in as `admin` with the password you set. The
-administrator is created only on the first run against an empty database.
+Then open <http://localhost:5173>. While no administrator exists, the first-run setup screen asks
+for a login ID, a display name, and a password, and signs you in as soon as it is created. The
+screen disappears once an administrator exists.
 
 ```bash
 docker compose logs -f backend   # follow logs

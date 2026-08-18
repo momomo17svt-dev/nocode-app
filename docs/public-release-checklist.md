@@ -11,8 +11,9 @@
 
 - [ ] backend lint / build / testが成功
 - [ ] frontend lint / buildが成功
-- [ ] Dockerの新規DBから起動・ログインできる
-- [ ] Windows bat版の新規DBから起動・ログインできる
+- [ ] Dockerの新規DBから起動し、初回セットアップ画面で管理者を作成してログインできる
+- [ ] Windows bat版の新規DBから起動し、同じく初回セットアップ画面から始められる
+- [ ] 管理者作成後、`POST /api/setup/admin`が403を返す
 - [ ] 既存Dockerボリュームからデータを引き継げる
 - [ ] `npm audit`のHigh/Criticalが0件
 

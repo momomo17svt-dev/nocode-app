@@ -18,6 +18,8 @@ Docker版はNginxがSPA、`/api`、`/tiles`を同一オリジンで公開しま�
 
 ## 認証と防御
 
+管理者が1人もいない状態では`GET /api/setup/status`が`required: true`を返し、画面は初回セットアップへ遷移します。`POST /api/setup/admin`が最初のSystemAdminを作成し、そのまま認証Cookieを発行します。管理者が存在する間、このエンドポイントは403しか返しません（認証ガードは付けず、作成可否だけで判断します）。
+
 ログイン成功時にJWTをHttpOnly・SameSite Cookieへ、CSRFトークンを読取可能Cookieへ保存します。フロントエンドは更新通信にCSRFヘッダーを付けます。Bearer認証も外部API連携とテストのために受け付けますが、ログイン本文へのBearer返却は既定で無効です。
 
 NginxとAPIはCSP、クリックジャッキング防止、MIMEスニッフィング防止等のヘッダーを返します。アップロードはメモリで受け、認可とファイル内容検証を通過してからUUID名で保存します。
