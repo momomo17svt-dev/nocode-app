@@ -12,13 +12,13 @@ DockerとComposeプラグインがあれば、Node.jsもPostgreSQLも別途用�
 cp .env.example .env
 ```
 
-`.env`はコピーしたままでも起動します。ただし秘密情報3つは`sample_only_`で始まるサンプル値で、**このリポジトリで公開されています**。自分1台で試す場合を除き、次の値を固有のものへ変更してください（Windowsの`start_docker.bat`は`sample_only_`の値を自動で置き換えます）。
+`.env`はコピーしたままでも起動します。ただし秘密情報2つは`sample_only_`で始まるサンプル値で、**このリポジトリで公開されています**。自分1台で試す場合を除き、次の値を固有のものへ変更してください（Windowsの`start_docker.bat`は`sample_only_`の値を自動で置き換えます）。
 
 | 変数 | 設定する値 |
 | --- | --- |
 | `POSTGRES_PASSWORD` | 任意の強いパスワード。コンテナ間でのみ使います |
 | `JWT_SECRET` | ランダムな32文字以上。後から変えると全員ログアウトします |
-| `INITIAL_ADMIN_PASSWORD` | 12文字以上。最初の管理者を作るときに一度だけ使います |
+| `INITIAL_ADMIN_PASSWORD` | 空のままで構いません。管理者は初回アクセス時にブラウザで作成します（無人セットアップで自動作成したい場合だけ12文字以上を設定） |
 
 `JWT_SECRET`は`openssl rand -hex 32`で作れます。
 
@@ -78,7 +78,7 @@ bat版のバックエンドは3001番、フロントエンドは5173番を使用
 
 ## 手動セットアップ
 
-`backend/.env.example`を`backend/.env`へコピーします。そのままでも動きますが、`JWT_SECRET`と`INITIAL_ADMIN_PASSWORD`は公開されているサンプル値なので、固有の値へ変更してください。
+`backend/.env.example`を`backend/.env`へコピーします。そのままでも動きますが、`JWT_SECRET`は公開されているサンプル値なので固有の値へ変更してください。管理者は初回アクセス時にブラウザで作成します。
 
 ```bash
 cd backend

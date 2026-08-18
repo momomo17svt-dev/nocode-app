@@ -88,6 +88,20 @@ const EN: Record<string, string> = {
   'ログイン': 'Sign in',
   'ログイン中...': 'Signing in...',
   'ログインに失敗しました': 'Sign-in failed',
+
+  // First-run setup
+  '最初の管理者アカウントを作成します': 'Create the first administrator account',
+  '表示名': 'Display name',
+  'パスワード（確認）': 'Password (confirm)',
+  '管理者を作成して開始': 'Create administrator and start',
+  '作成中...': 'Creating...',
+  '管理者の作成に失敗しました': 'Could not create the administrator',
+  'この画面は管理者がいない間だけ表示されます。作成後はそのままサインインします。':
+    'This screen appears only while no administrator exists. You are signed in right after it is created.',
+  '初回起動時は、管理者アカウントの作成画面が表示されます。':
+    'On first run, the administrator setup screen is shown instead.',
+  '管理者は既に作成済みです。ログイン画面からサインインしてください':
+    'An administrator already exists. Sign in from the login screen.',
   '認証の有効期限が切れました。再度ログインしてください。': 'Your session has expired. Sign in again.',
   '通信がタイムアウトしました。しばらくしてから再試行してください。': 'The request timed out. Wait a moment and try again.',
   'ダウンロードがタイムアウトしました': 'The download timed out',

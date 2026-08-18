@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { Zap, LogIn } from 'lucide-react';
 import { api } from '../lib/api';
+import { isSetupRequired } from '../lib/setup';
 import { Button } from '../components/ui/Button';
 import { Field } from '../components/ui/Field';
 import { APP_NAME } from '../config/branding';
@@ -28,6 +29,9 @@ export function Login() {
       setLoading(false);
     }
   };
+
+  // 管理者がまだいない環境では、ログインではなく初回セットアップへ送る。
+  if (isSetupRequired()) return <Navigate to="/setup" replace />;
 
   return (
     <div className="min-h-screen grid place-items-center p-4 bg-canvas relative overflow-hidden">
@@ -78,7 +82,7 @@ export function Login() {
         </form>
 
         <p className="text-xs text-muted text-center mt-6 leading-relaxed">
-          初期管理者はセットアップ時に安全なパスワードで作成されます。
+          初回起動時は、管理者アカウントの作成画面が表示されます。
         </p>
       </div>
     </div>

@@ -11,15 +11,20 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
+/**
+ * 無人セットアップ用の初期パスワード。未設定なら空を返し、管理者は作らない
+ * （最初のアクセスで画面から作成する）。設定してあるのに使えない値なら停止する。
+ */
 function initialAdminPassword(): string {
   const password = process.env.INITIAL_ADMIN_PASSWORD?.trim() || '';
+  if (!password) return '';
   const unsafe =
     password.length < 12 ||
     /change_me/i.test(password) ||
     password.toLowerCase() === 'password123';
   if (unsafe) {
     throw new Error(
-      'A new administrator is required. Set INITIAL_ADMIN_PASSWORD to a unique password of 12 or more characters.',
+      'INITIAL_ADMIN_PASSWORD is set but unusable. Use 12 or more characters, or leave it empty and create the administrator in the browser.',
     );
   }
   return password;
@@ -36,7 +41,13 @@ async function ensureInitialAdmin() {
     return;
   }
 
-  const passwordHash = await bcrypt.hash(initialAdminPassword(), 12);
+  const password = initialAdminPassword();
+  if (!password) {
+    console.log('No administrator yet. Open the app in a browser and create one on the setup screen.');
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
   await prisma.user.create({
     data: {
       loginId,

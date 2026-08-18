@@ -32,10 +32,9 @@ echo "Ensuring the initial administrator exists..."
 if ! node dist/prisma/seed.js; then
   echo "" >&2
   echo "Initial setup failed, so this container will keep restarting and stay unhealthy." >&2
-  echo "If the error above mentions INITIAL_ADMIN_PASSWORD, .env leaves it empty or still" >&2
-  echo "holds an example placeholder." >&2
-  echo "  Windows: run start_docker.bat, which fills the empty values in for you." >&2
-  echo "  Other  : set it in .env (12 characters or more), then start again." >&2
+  echo "If the error above mentions INITIAL_ADMIN_PASSWORD, .env holds a value the app" >&2
+  echo "cannot use. Leave it empty to create the administrator in the browser instead," >&2
+  echo "or set a password of 12 characters or more for unattended provisioning." >&2
   exit 1
 fi
 

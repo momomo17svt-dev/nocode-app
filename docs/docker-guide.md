@@ -6,12 +6,12 @@
 
 1. Docker Desktopを起動します。
 2. `start_docker.bat`を実行します。
-3. 初回に表示される管理者情報を保存します。
-4. <http://localhost:5173>を開きます。
+3. <http://localhost:5173>を開きます。
+4. 初回だけ表示される作成画面で、管理者アカウントを決めます。
 
-初回は`.env`へランダムなDBパスワード、JWT秘密鍵、管理者パスワードを生成します。`.env`を先にコピーしてある場合も、`sample_only_`のサンプル値・空欄・`change_me`のまま残っている値は生成値へ置き換えます（DBパスワードだけは後述の理由で既存ボリュームがあるときは変更しません）。
+初回は`.env`へランダムなDBパスワードとJWT秘密鍵を生成します。管理者パスワードは`.env`へ保存しません（ブラウザの作成画面で決めます）。`.env`を先にコピーしてある場合も、`sample_only_`のサンプル値・空欄・`change_me`のまま残っている値は生成値へ置き換えます（DBパスワードだけは後述の理由で既存ボリュームがあるときは変更しません）。
 
-手動起動では`.env.example`を`.env`へコピーすればそのまま実行できます。ただし秘密情報3つ（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）は公開されているサンプル値なので、他の端末から届く場所で使う前に変更してください。
+手動起動では`.env.example`を`.env`へコピーすればそのまま実行できます。ただし`POSTGRES_PASSWORD`と`JWT_SECRET`は公開されているサンプル値なので、他の端末から届く場所で使う前に変更してください。
 
 ```powershell
 docker compose up -d --build
@@ -25,8 +25,8 @@ docker compose up -d --build
 
 - `JWT_SECRET is empty or still an example placeholder`
   古い`.env`に`change_me`が残っています。`openssl rand -hex 32`などで固有の値を設定してください。この値を変えると、発行済みのログインCookieはすべて無効になります。
-- `Set INITIAL_ADMIN_PASSWORD to a unique password of 12 or more characters`
-  `INITIAL_ADMIN_PASSWORD`が空か、プレースホルダのままです。バックエンドは初期管理者を作れずに終了し、再起動を繰り返すためヘルスチェックが通りません。Windowsは`start_docker.bat`を実行すれば埋めます。他の環境では12文字以上の値を`.env`へ設定して起動し直してください。
+- `INITIAL_ADMIN_PASSWORD is set but unusable`
+  無人セットアップ用に値を入れたものの、12文字未満かプレースホルダのままです。空にすれば初回アクセス時にブラウザで管理者を作成できます。自動作成したい場合は12文字以上を設定してください。
 - `password authentication failed for user "postgres"`
   `.env`の`POSTGRES_PASSWORD`と、既存DBボリュームの作成時パスワードが食い違っています。PostgreSQLはデータディレクトリの初期化時にしか`POSTGRES_PASSWORD`を読まないため、後から`.env`だけ変えても反映されません。作成時の値へ戻すか、バックアップのうえでDBを作り直します（`docker compose down -v`はデータを削除します）。
 
@@ -39,7 +39,7 @@ docker compose up -d --build
 
 ## 初期DB
 
-ソースリポジトリにDBダンプは含まれません。空のDBではバックエンドがPrismaマイグレーションを適用し、`.env`の`INITIAL_ADMIN_*`から最初の管理者を作成します。
+ソースリポジトリにDBダンプは含まれません。空のDBではバックエンドがPrismaマイグレーションを適用し、管理者が1人もいない状態で起動します。最初の管理者は、ブラウザで開いた初回セットアップ画面から作成します（`.env`の`INITIAL_ADMIN_PASSWORD`に12文字以上を設定しておくと、その値で自動作成されます）。
 
 別PCから移した`migration/nocode_db.sql`がある場合、新しいDockerボリュームの初回作成時にPostgreSQLが自動復元します。既存ボリュームへは再適用しません。
 
