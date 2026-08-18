@@ -104,6 +104,7 @@ $jwtSecret = New-RandomHex 32
 $adminGenerated = $false
 $jwtReplaced = $false
 $dbPasswordKept = $false
+$dbPasswordGuessed = $false
 $volumeName = 'nocode-app_postgres_data'
 
 if ($Mode -eq 'Docker') {
@@ -142,19 +143,24 @@ if ($Mode -eq 'Docker') {
     $configuredVolume = Get-EnvValue $target 'POSTGRES_VOLUME_NAME'
     if ($configuredVolume) { $volumeName = $configuredVolume }
 
-    # A .env copied by hand from .env.example keeps every change_me placeholder, and
-    # Add-MissingLines never touches a key that already exists. Replace the secrets the
-    # backend rejects, otherwise its seed step fails and the container restarts forever.
+    # A .env copied by hand from .env.example keeps its empty secrets (older copies keep
+    # the change_me placeholders), and Add-MissingLines never touches a key that already
+    # exists. Fill in what compose and the backend refuse to start on.
     $jwtReplaced = Repair-Secret $target 'JWT_SECRET' 32 $jwtSecret
     $adminGenerated = $created -or (Repair-Secret $target 'INITIAL_ADMIN_PASSWORD' 12 $adminPassword)
-    if (Test-PlaceholderValue (Get-EnvValue $target 'POSTGRES_PASSWORD') 12) {
-        if (Test-DockerVolume $volumeName) {
+    $dbPassword = Get-EnvValue $target 'POSTGRES_PASSWORD'
+    if (Test-PlaceholderValue $dbPassword 12) {
+        $volumeExists = Test-DockerVolume $volumeName
+        if ($volumeExists -and -not [string]::IsNullOrWhiteSpace($dbPassword)) {
             # PostgreSQL reads POSTGRES_PASSWORD only while it initializes its data
             # directory. Rotating it against an existing volume just breaks the login.
             $dbPasswordKept = $true
         }
         else {
+            # compose refuses to start on an empty value, so one has to be written even
+            # when the volume predates it and may hold a different password.
             Set-EnvValue $target 'POSTGRES_PASSWORD' (New-RandomHex 24)
+            $dbPasswordGuessed = $volumeExists
         }
     }
 }
@@ -183,7 +189,8 @@ else {
     })
 
     # setup.bat runs initdb without authentication, so the bundled server expects this URL.
-    if ((Get-EnvValue $target 'DATABASE_URL') -match 'change_me') {
+    $databaseUrl = Get-EnvValue $target 'DATABASE_URL'
+    if ([string]::IsNullOrWhiteSpace($databaseUrl) -or $databaseUrl -match 'change_me') {
         Set-EnvValue $target 'DATABASE_URL' 'postgresql://postgres:postgres@127.0.0.1:5432/nocode_db?schema=public'
     }
     $jwtReplaced = Repair-Secret $target 'JWT_SECRET' 32 $jwtSecret
@@ -195,10 +202,17 @@ if ($jwtReplaced) {
 }
 
 if ($dbPasswordKept) {
-    Write-Warning "POSTGRES_PASSWORD is still the .env.example placeholder, but volume $volumeName already exists."
+    Write-Warning "POSTGRES_PASSWORD is still an example placeholder, but volume $volumeName already exists."
     Write-Warning 'PostgreSQL keeps the password its data directory was created with, so .env is left as is.'
     Write-Warning 'To start over with a generated password (this deletes the local database):'
     Write-Warning '  docker compose down -v'
+}
+
+if ($dbPasswordGuessed) {
+    Write-Warning "POSTGRES_PASSWORD was empty, so a new one was generated, but volume $volumeName already exists."
+    Write-Warning 'PostgreSQL keeps the password its data directory was created with, so the new value may not match.'
+    Write-Warning 'If the backend reports password authentication failed, restore the original value, or run:'
+    Write-Warning '  docker compose down -v   (this deletes the local database)'
 }
 
 if ($adminGenerated) {

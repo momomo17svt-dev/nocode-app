@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-nocode_db}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required. Run start_docker.bat first.}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is empty in .env. Fill it in, or run start_docker.bat on Windows to generate it.}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migration:/docker-entrypoint-initdb.d:ro
@@ -28,7 +28,7 @@ services:
       TZ: ${TZ:-Asia/Tokyo}
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nocode_db}?schema=public
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required. Run start_docker.bat first.}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is empty in .env. Fill it in (openssl rand -hex 32), or run start_docker.bat on Windows to generate it.}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       AUTH_COOKIE_MAX_AGE_MS: ${AUTH_COOKIE_MAX_AGE_MS:-28800000}
