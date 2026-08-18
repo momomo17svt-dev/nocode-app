@@ -83,13 +83,13 @@ DockerとComposeプラグインがあれば、Node.jsもPostgreSQLも別途用�
 cp .env.example .env
 ```
 
-コピーしたままで起動できます。ただし秘密情報3つ（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）は`sample_only_`で始まる**公開済みのサンプル値**です。自分の端末だけで試す場合を除き、固有の値へ変更してください（`JWT_SECRET` は `openssl rand -hex 32` で作れます）。
+コピーしたままで起動できます。ただし`POSTGRES_PASSWORD`と`JWT_SECRET`は`sample_only_`で始まる**公開済みのサンプル値**です。自分の端末だけで試す場合を除き、固有の値へ変更してください（`JWT_SECRET` は `openssl rand -hex 32` で作れます）。
 
 ```bash
 docker compose up -d --build
 ```
 
-<http://localhost:5173> を開き、`admin` と `.env` の `INITIAL_ADMIN_PASSWORD` の値でログインします。停止は `docker compose down`、ログは `docker compose logs -f backend` です。
+<http://localhost:5173> を開くと**初回だけ管理者アカウントの作成画面**が出ます。ログインIDとパスワードをその場で決めれば、そのままサインインした状態で始まります（`.env`に管理者パスワードは保存されません）。停止は `docker compose down`、ログは `docker compose logs -f backend` です。
 
 ### Windows のショートカット
 
@@ -99,7 +99,7 @@ Windowsでは秘密情報の生成まで含めてbatが面倒を見ます。`.en
 start_docker.bat
 ```
 
-管理者のログインIDとパスワードは**一度だけ**画面に表示されるので、その場で保存してください。停止とログ確認は `stop_docker.bat` と `logs_docker.bat` です。
+起動したら <http://localhost:5173> を開き、初回の作成画面で管理者アカウントを決めます。停止とログ確認は `stop_docker.bat` と `logs_docker.bat` です。
 
 ### Docker を使わない場合（Windows）
 

@@ -87,17 +87,18 @@ With Docker and the Compose plugin, you need neither Node.js nor PostgreSQL on t
 cp .env.example .env
 ```
 
-A straight copy already runs. The three secrets (`POSTGRES_PASSWORD`, `JWT_SECRET`,
-`INITIAL_ADMIN_PASSWORD`) are `sample_only_` values **published in this repository**, so
-replace them unless nobody else can reach the machine. `openssl rand -hex 32` produces a
-suitable secret.
+A straight copy already runs. `POSTGRES_PASSWORD` and `JWT_SECRET` are `sample_only_`
+values **published in this repository**, so replace them unless nobody else can reach the
+machine. `openssl rand -hex 32` produces a suitable secret.
 
 ```bash
 docker compose up -d --build
 ```
 
-Open <http://localhost:5173> and sign in as `admin` with `INITIAL_ADMIN_PASSWORD` from
-`.env`. Stop with `docker compose down`; follow logs with `docker compose logs -f backend`.
+Open <http://localhost:5173>. On the **first run it asks you to create the administrator
+account**: pick a login ID and password there and you are signed in right away (no
+administrator password is stored in `.env`). Stop with `docker compose down`; follow logs
+with `docker compose logs -f backend`.
 
 Full details, including running behind HTTPS, are in the [setup guide](docs/setup-guide.en.md).
 
@@ -109,8 +110,8 @@ On Windows the batch scripts generate the secrets for you, so you never edit `.e
 start_docker.bat
 ```
 
-The administrator login and password are printed **once** — save them right away.
-`stop_docker.bat` and `logs_docker.bat` stop the stack and tail its logs.
+Then open <http://localhost:5173> and create the administrator account on the first-run
+screen. `stop_docker.bat` and `logs_docker.bat` stop the stack and tail its logs.
 
 ### Windows without Docker
 

@@ -25,6 +25,6 @@ import { ApiTokensService } from './api-tokens.service';
   ],
   providers: [AuthService, JwtStrategy, ApiTokensService],
   controllers: [AuthController],
-  exports: [ApiTokensService],
+  exports: [ApiTokensService, AuthService],
 })
 export class AuthModule {}

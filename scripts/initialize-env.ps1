@@ -88,6 +88,16 @@ function Repair-Secret([string]$Path, [string]$Key, [int]$MinLength, [string]$Ne
     return $true
 }
 
+# The administrator is created in the browser on first run, so INITIAL_ADMIN_PASSWORD is
+# meant to stay empty. An older .env may still carry a placeholder that the seed rejects.
+function Clear-SampleAdminPassword([string]$Path) {
+    $value = Get-EnvValue $Path 'INITIAL_ADMIN_PASSWORD'
+    if ([string]::IsNullOrWhiteSpace($value)) { return $false }
+    if (-not (Test-PlaceholderValue $value 12)) { return $false }
+    Set-EnvValue $Path 'INITIAL_ADMIN_PASSWORD' '' | Out-Null
+    return $true
+}
+
 function Test-DockerVolume([string]$Name) {
     # 'docker volume inspect' writes to stderr when the volume is absent, and Windows
     # PowerShell turns that into a terminating error under $ErrorActionPreference='Stop'.
@@ -100,9 +110,8 @@ function Test-DockerVolume([string]$Name) {
     return $false
 }
 
-$adminPassword = New-RandomHex 18
 $jwtSecret = New-RandomHex 32
-$adminGenerated = $false
+$adminCleared = $false
 $jwtReplaced = $false
 $dbPasswordKept = $false
 $dbPasswordGuessed = $false
@@ -127,7 +136,7 @@ if ($Mode -eq 'Docker') {
         AUTH_EXPOSE_BEARER_TOKEN = 'false'
         INITIAL_ADMIN_LOGIN = 'admin'
         INITIAL_ADMIN_NAME = 'Administrator'
-        INITIAL_ADMIN_PASSWORD = $adminPassword
+        INITIAL_ADMIN_PASSWORD = ''
         CORS_ORIGINS = ''
         PUBLIC_FORM_RATE_LIMIT_PER_MINUTE = '10'
         SLOW_REQUEST_MS = '1000'
@@ -152,7 +161,7 @@ if ($Mode -eq 'Docker') {
     # the change_me placeholders), and Add-MissingLines never touches a key that already
     # exists. Fill in what compose and the backend refuse to start on.
     $jwtReplaced = Repair-Secret $target 'JWT_SECRET' 32 $jwtSecret
-    $adminGenerated = $created -or (Repair-Secret $target 'INITIAL_ADMIN_PASSWORD' 12 $adminPassword)
+    $adminCleared = Clear-SampleAdminPassword $target
     $dbPassword = Get-EnvValue $target 'POSTGRES_PASSWORD'
     if (Test-PlaceholderValue $dbPassword 12) {
         $volumeExists = Test-DockerVolume $volumeName
@@ -181,7 +190,7 @@ else {
         AUTH_EXPOSE_BEARER_TOKEN = 'false'
         INITIAL_ADMIN_LOGIN = 'admin'
         INITIAL_ADMIN_NAME = 'Administrator'
-        INITIAL_ADMIN_PASSWORD = $adminPassword
+        INITIAL_ADMIN_PASSWORD = ''
         CORS_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173'
         PUBLIC_FORM_RATE_LIMIT_PER_MINUTE = '10'
         SLOW_REQUEST_MS = '1000'
@@ -199,7 +208,7 @@ else {
         Set-EnvValue $target 'DATABASE_URL' 'postgresql://postgres:postgres@127.0.0.1:5432/nocode_db?schema=public'
     }
     $jwtReplaced = Repair-Secret $target 'JWT_SECRET' 32 $jwtSecret
-    $adminGenerated = $created -or (Repair-Secret $target 'INITIAL_ADMIN_PASSWORD' 12 $adminPassword)
+    $adminCleared = Clear-SampleAdminPassword $target
 }
 
 if ($jwtReplaced) {
@@ -220,15 +229,14 @@ if ($dbPasswordGuessed) {
     Write-Warning '  docker compose down -v   (this deletes the local database)'
 }
 
-if ($adminGenerated) {
-    $adminLogin = Get-EnvValue $target 'INITIAL_ADMIN_LOGIN'
-    if (-not $adminLogin) { $adminLogin = 'admin' }
-    Write-Host 'Initial administrator credentials (shown once):'
-    Write-Host "  Login    : $adminLogin"
-    Write-Host ("  Password : {0}" -f (Get-EnvValue $target 'INITIAL_ADMIN_PASSWORD'))
-    Write-Host "  Saved in : $target"
-    Write-Host '  Used only while that administrator does not exist in the database yet.'
+if ($adminCleared) {
+    Write-Host 'Cleared the example INITIAL_ADMIN_PASSWORD; the administrator is created in the browser.'
+}
+
+Write-Host "Configuration ready: $target"
+if ($Mode -eq 'Docker') {
+    Write-Host "On the first run, open http://localhost:$AppPort and create the administrator account."
 }
 else {
-    Write-Host "Configuration ready: $target"
+    Write-Host 'On the first run, open the app in a browser and create the administrator account.'
 }

@@ -20,13 +20,14 @@ import { DashboardsModule } from './dashboards/dashboards.module';
 import { LlmModule } from './llm/llm.module';
 import { AiModule } from './ai/ai.module';
 import { PublicFormsModule } from './public-forms/public-forms.module';
+import { SetupModule } from './setup/setup.module';
 import { RequestObservabilityMiddleware } from './common/request-observability.middleware';
 import { CsrfProtectionMiddleware } from './auth/csrf-protection.middleware';
 import { SettingsModule } from './system-settings/settings.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
 
 @Module({
-  imports: [PrismaModule, SettingsModule, AuthModule, SystemSettingsModule, UsersModule, GroupsModule, AppsModule, RecordsModule, FieldsModule, ViewsModule, AppPermissionsModule, AttachmentsModule, AuditLogsModule, DirectoryModule, NotificationsModule, PortalModule, TilesModule, DashboardsModule, LlmModule, AiModule, PublicFormsModule],
+  imports: [PrismaModule, SettingsModule, AuthModule, SetupModule, SystemSettingsModule, UsersModule, GroupsModule, AppsModule, RecordsModule, FieldsModule, ViewsModule, AppPermissionsModule, AttachmentsModule, AuditLogsModule, DirectoryModule, NotificationsModule, PortalModule, TilesModule, DashboardsModule, LlmModule, AiModule, PublicFormsModule],
   controllers: [AppController],
   providers: [AppService, RequestObservabilityMiddleware, CsrfProtectionMiddleware],
 })

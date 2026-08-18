@@ -14,7 +14,7 @@ containers.
 cp .env.example .env
 ```
 
-A straight copy of `.env` already runs. The three secrets are `sample_only_` values that
+A straight copy of `.env` already runs. The two secrets are `sample_only_` values that
 **this repository publishes**, so unless nobody else can reach the machine, replace them
 (on Windows, `start_docker.bat` replaces every `sample_only_` value for you):
 
@@ -22,7 +22,7 @@ A straight copy of `.env` already runs. The three secrets are `sample_only_` val
 | --- | --- |
 | `POSTGRES_PASSWORD` | Any strong password. Only the containers use it |
 | `JWT_SECRET` | 32+ random characters. Changing it later invalidates all sessions |
-| `INITIAL_ADMIN_PASSWORD` | 12+ characters. Used once, to create the first administrator |
+| `INITIAL_ADMIN_PASSWORD` | Leave empty. The administrator is created in the browser on the first run (set 12+ characters only for unattended provisioning) |
 
 `openssl rand -hex 32` produces a suitable `JWT_SECRET`.
 
@@ -102,8 +102,9 @@ Windows Firewall.
 
 ## Manual setup (development)
 
-Copy `backend/.env.example` to `backend/.env`. It runs as it is, but `JWT_SECRET` and
-`INITIAL_ADMIN_PASSWORD` are published sample values, so replace them with your own.
+Copy `backend/.env.example` to `backend/.env`. It runs as it is, but `JWT_SECRET` is a
+published sample value, so replace it with your own. The administrator is created in the
+browser on the first run.
 
 ```bash
 cd backend

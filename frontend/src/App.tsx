@@ -1,8 +1,10 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Login } from './pages/Login';
+import { Setup } from './pages/Setup';
 import { getUser, isAdmin, canManageDirectory, migrateLegacySession } from './lib/auth';
 import { api } from './lib/api';
+import { isSetupRequired, loadSetupStatus } from './lib/setup';
 import { ToastProvider } from './components/ui/Toast';
 import { ConfirmProvider } from './components/ui/ConfirmDialog';
 
@@ -28,11 +30,14 @@ const SystemSettings = lazy(async () => ({ default: (await import('./pages/admin
 const ChangePassword = lazy(async () => ({ default: (await import('./pages/ChangePassword')).ChangePassword }));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  // 管理者が1人もいない間は、どの画面よりも先に初回セットアップへ送る。
+  if (isSetupRequired()) return <Navigate to="/setup" replace />;
   if (!getUser()) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
+  if (isSetupRequired()) return <Navigate to="/setup" replace />;
   if (!getUser()) return <Navigate to="/login" replace />;
   if (!isAdmin(getUser())) return <Navigate to="/" replace />;
   return <>{children}</>;
@@ -40,6 +45,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 
 /** ユーザー/グループ管理: SystemAdmin と GroupAdmin(管理者) が利用可能。 */
 function DirectoryAdminRoute({ children }: { children: React.ReactNode }) {
+  if (isSetupRequired()) return <Navigate to="/setup" replace />;
   if (!getUser()) return <Navigate to="/login" replace />;
   if (!canManageDirectory(getUser())) return <Navigate to="/" replace />;
   return <>{children}</>;
@@ -48,7 +54,7 @@ function DirectoryAdminRoute({ children }: { children: React.ReactNode }) {
 function App() {
   const [sessionReady, setSessionReady] = useState(false);
   useEffect(() => {
-    void migrateLegacySession(api.base).finally(() => setSessionReady(true));
+    void Promise.all([migrateLegacySession(api.base), loadSetupStatus()]).finally(() => setSessionReady(true));
   }, []);
 
   if (!sessionReady) {
@@ -62,6 +68,8 @@ function App() {
           <Suspense fallback={<div className="min-h-screen grid place-items-center text-muted">読み込み中...</div>}>
           <Routes>
         <Route path="/login" element={<Login />} />
+        {/* 初回セットアップ（管理者がいない間だけ有効） */}
+        <Route path="/setup" element={<Setup />} />
         {/* ログイン不要の匿名公開フォーム（ProtectedRoute の外） */}
         <Route path="/f/:token" element={<PublicForm />} />
 
