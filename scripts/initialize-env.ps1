@@ -71,11 +71,12 @@ function Set-EnvValue([string]$Path, [string]$Key, [string]$Value) {
     [System.IO.File]::WriteAllText($Path, $text, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-# The backend refuses to start on the values shipped in .env.example, so treat them as absent.
+# .env.example ships sample_only_ secrets so that a copy of it starts as it is. They are
+# public, so replace them here; change_me is the older placeholder and never worked.
 function Test-PlaceholderValue([string]$Value, [int]$MinLength) {
     if ([string]::IsNullOrWhiteSpace($Value)) { return $true }
     $trimmed = $Value.Trim()
-    if ($trimmed -match 'change_me') { return $true }
+    if ($trimmed -match 'change_me' -or $trimmed -match 'sample_only') { return $true }
     if ($trimmed.ToLowerInvariant() -eq 'password123') { return $true }
     if ($trimmed.Length -lt $MinLength) { return $true }
     return $false

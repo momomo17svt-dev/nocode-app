@@ -14,8 +14,9 @@ containers.
 cp .env.example .env
 ```
 
-Open `.env` and fill in **every** empty value. Left empty, `docker compose` stops and names
-the variable it needs:
+A straight copy of `.env` already runs. The three secrets are `sample_only_` values that
+**this repository publishes**, so unless nobody else can reach the machine, replace them
+(on Windows, `start_docker.bat` replaces every `sample_only_` value for you):
 
 | Variable | What to put there |
 | --- | --- |
@@ -101,8 +102,8 @@ Windows Firewall.
 
 ## Manual setup (development)
 
-Copy `backend/.env.example` to `backend/.env` and fill in the empty values (`JWT_SECRET` and
-`INITIAL_ADMIN_PASSWORD`) with safe ones.
+Copy `backend/.env.example` to `backend/.env`. It runs as it is, but `JWT_SECRET` and
+`INITIAL_ADMIN_PASSWORD` are published sample values, so replace them with your own.
 
 ```bash
 cd backend

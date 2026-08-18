@@ -83,13 +83,13 @@ DockerとComposeプラグインがあれば、Node.jsもPostgreSQLも別途用�
 cp .env.example .env
 ```
 
-`.env` の空欄3つ（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）を埋めます。`JWT_SECRET` は `openssl rand -hex 32` で作れます。空のままだと、`docker compose` がどの変数か名前を挙げて起動を止めます。
+コピーしたままで起動できます。ただし秘密情報3つ（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）は`sample_only_`で始まる**公開済みのサンプル値**です。自分の端末だけで試す場合を除き、固有の値へ変更してください（`JWT_SECRET` は `openssl rand -hex 32` で作れます）。
 
 ```bash
 docker compose up -d --build
 ```
 
-<http://localhost:5173> を開き、`admin` と設定したパスワードでログインします。停止は `docker compose down`、ログは `docker compose logs -f backend` です。
+<http://localhost:5173> を開き、`admin` と `.env` の `INITIAL_ADMIN_PASSWORD` の値でログインします。停止は `docker compose down`、ログは `docker compose logs -f backend` です。
 
 ### Windows のショートカット
 

@@ -12,7 +12,7 @@ DockerとComposeプラグインがあれば、Node.jsもPostgreSQLも別途用�
 cp .env.example .env
 ```
 
-`.env`の空欄をすべて埋めます。空のままだと、`docker compose`がどの変数か名前を挙げて起動を止めます。
+`.env`はコピーしたままでも起動します。ただし秘密情報3つは`sample_only_`で始まるサンプル値で、**このリポジトリで公開されています**。自分1台で試す場合を除き、次の値を固有のものへ変更してください（Windowsの`start_docker.bat`は`sample_only_`の値を自動で置き換えます）。
 
 | 変数 | 設定する値 |
 | --- | --- |
@@ -78,7 +78,7 @@ bat版のバックエンドは3001番、フロントエンドは5173番を使用
 
 ## 手動セットアップ
 
-`backend/.env.example`を`backend/.env`へコピーし、空欄（`JWT_SECRET`と`INITIAL_ADMIN_PASSWORD`）を安全な値で埋めます。
+`backend/.env.example`を`backend/.env`へコピーします。そのままでも動きますが、`JWT_SECRET`と`INITIAL_ADMIN_PASSWORD`は公開されているサンプル値なので、固有の値へ変更してください。
 
 ```bash
 cd backend

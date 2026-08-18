@@ -9,9 +9,9 @@
 3. 初回に表示される管理者情報を保存します。
 4. <http://localhost:5173>を開きます。
 
-初回は`.env`へランダムなDBパスワード、JWT秘密鍵、管理者パスワードを生成します。`.env`を先にコピーしてある場合も、空欄や`change_me`のまま残っている値は生成値へ置き換えます（DBパスワードだけは後述の理由で既存ボリュームがあるときは変更しません）。
+初回は`.env`へランダムなDBパスワード、JWT秘密鍵、管理者パスワードを生成します。`.env`を先にコピーしてある場合も、`sample_only_`のサンプル値・空欄・`change_me`のまま残っている値は生成値へ置き換えます（DBパスワードだけは後述の理由で既存ボリュームがあるときは変更しません）。
 
-手動起動では`.env.example`を`.env`へコピーし、空欄3つ（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）を埋めてから実行してください。
+手動起動では`.env.example`を`.env`へコピーすればそのまま実行できます。ただし秘密情報3つ（`POSTGRES_PASSWORD` / `JWT_SECRET` / `INITIAL_ADMIN_PASSWORD`）は公開されているサンプル値なので、他の端末から届く場所で使う前に変更してください。
 
 ```powershell
 docker compose up -d --build
@@ -19,7 +19,7 @@ docker compose up -d --build
 
 ## 起動しないとき
 
-`required variable POSTGRES_PASSWORD is missing a value`のように、composeがビルド前に止まる場合は、その変数が`.env`で空のままです。埋めてから起動し直します（Windowsは`start_docker.bat`が生成します）。
+`required variable POSTGRES_PASSWORD is missing a value`のように、composeがビルド前に止まる場合は、`.env`がまだ無いか、その変数が空です。`.env.example`をコピーしてから起動し直します（Windowsは`start_docker.bat`が作成まで行います）。
 
 `dependency failed to start: container nocode-app-backend-1 is unhealthy`で止まったら、まず`docker compose logs backend`を読みます。
 

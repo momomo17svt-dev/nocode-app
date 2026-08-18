@@ -87,16 +87,17 @@ With Docker and the Compose plugin, you need neither Node.js nor PostgreSQL on t
 cp .env.example .env
 ```
 
-Fill in the three empty values in `.env` (`POSTGRES_PASSWORD`, `JWT_SECRET`,
-`INITIAL_ADMIN_PASSWORD`). `openssl rand -hex 32` produces a suitable secret. Left empty,
-`docker compose` stops and names the variable it needs.
+A straight copy already runs. The three secrets (`POSTGRES_PASSWORD`, `JWT_SECRET`,
+`INITIAL_ADMIN_PASSWORD`) are `sample_only_` values **published in this repository**, so
+replace them unless nobody else can reach the machine. `openssl rand -hex 32` produces a
+suitable secret.
 
 ```bash
 docker compose up -d --build
 ```
 
-Open <http://localhost:5173> and sign in as `admin` with the password you set. Stop with
-`docker compose down`; follow logs with `docker compose logs -f backend`.
+Open <http://localhost:5173> and sign in as `admin` with `INITIAL_ADMIN_PASSWORD` from
+`.env`. Stop with `docker compose down`; follow logs with `docker compose logs -f backend`.
 
 Full details, including running behind HTTPS, are in the [setup guide](docs/setup-guide.en.md).
 
