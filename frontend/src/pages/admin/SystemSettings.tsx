@@ -9,6 +9,7 @@ import {
   Download,
   KeyRound,
   Loader2,
+  MapPin,
   Play,
   RotateCcw,
   Save,
@@ -24,6 +25,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { api } from '../../lib/api';
 import { formatDateTime, formatNumber } from '../../lib/i18n';
+import { BASEMAPS, getBasemap, loadMapManifest, mapManifest } from '../../lib/map';
 
 interface AuthPolicy {
   maxFailedAttempts: number;
@@ -31,6 +33,11 @@ interface AuthPolicy {
   attemptWindowMinutes: number;
   sessionHours: number;
   passwordMinLength: number;
+}
+
+interface MapPolicy {
+  defaultBasemap: string;
+  tileUrl: string;
 }
 
 interface BackupState {
@@ -78,6 +85,9 @@ export function SystemSettings() {
   const [loading, setLoading] = useState(true);
   const [auth, setAuth] = useState<AuthPolicy | null>(null);
   const [backup, setBackup] = useState<BackupState | null>(null);
+  const [map, setMap] = useState<MapPolicy | null>(null);
+  const [savingMap, setSavingMap] = useState(false);
+  const [tileStyles, setTileStyles] = useState<string[]>(mapManifest().styles);
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [trash, setTrash] = useState<TrashRecord[]>([]);
   const [trashPage, setTrashPage] = useState(1);
@@ -93,14 +103,17 @@ export function SystemSettings() {
   const load = async () => {
     setLoading(true);
     try {
-      const [authPolicy, backupState, apiTokens, trashRows] = await Promise.all([
+      const [authPolicy, backupState, mapPolicy, apiTokens, trashRows] = await Promise.all([
         api.get<AuthPolicy>('/system/auth-policy', { cacheMs: 0 }),
         api.get<BackupState>('/system/backup', { cacheMs: 0 }),
+        api.get<MapPolicy>('/system/map', { cacheMs: 0 }),
         api.get<ApiToken[]>('/system/api-tokens', { cacheMs: 0 }),
         api.get<TrashPage>('/records/trash?page=1&pageSize=50', { cacheMs: 0 }),
       ]);
       setAuth(authPolicy);
       setBackup(backupState);
+      setMap(mapPolicy);
+      setTileStyles((await loadMapManifest(true)).styles);
       setTokens(apiTokens);
       setTrash(trashRows.items);
       setTrashPage(trashRows.page);
@@ -133,6 +146,18 @@ export function SystemSettings() {
       toast.success('ログイン・パスワード設定を保存しました');
     } catch (e: any) { toast.error(e.message); }
     finally { setSavingAuth(false); }
+  };
+
+  const saveMap = async () => {
+    if (!map) return;
+    setSavingMap(true);
+    try {
+      setMap(await api.put('/system/map', map));
+      // 開いている画面の地図が新しい既定で描かれるよう、取得済みの情報を捨てて読み直す。
+      await loadMapManifest(true);
+      toast.success('地図の設定を保存しました');
+    } catch (e: any) { toast.error(e.message); }
+    finally { setSavingMap(false); }
   };
 
   const saveBackup = async () => {
@@ -232,6 +257,35 @@ export function SystemSettings() {
             <Field label="パスワード最低文字数"><input type="number" min={8} max={64} className="input" value={auth.passwordMinLength} onChange={(e) => setAuth({ ...auth, passwordMinLength: Number(e.target.value) })} /></Field>
           </div>
           <div className="mt-4 flex justify-end"><Button variant="primary" icon={<Save className="size-4" />} loading={savingAuth} onClick={saveAuth}>保存</Button></div>
+        </section>
+      )}
+
+      {map && (
+        <section className="card p-5 mb-5">
+          <h2 className="font-semibold flex items-center gap-2 mb-1"><MapPin className="size-5 text-primary" />地図</h2>
+          <p className="text-xs text-muted mb-4">
+            位置フィールドの背景地図の既定です。アプリ側で個別に指定していない地図に適用されます。閲覧画面では利用者が右上の切替で変更できます。
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="既定の背景地図" hint="内蔵タイルはオフラインで使えます。オンライン版は配信元へ通信します。">
+              <select className="input" value={map.defaultBasemap} onChange={(e) => setMap({ ...map, defaultBasemap: e.target.value })}>
+                {BASEMAPS.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.kind === 'builtin' && !tileStyles.includes(b.id) ? `${b.label}（タイル未取得）` : b.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {map.defaultBasemap === 'custom' && (
+              <Field label="カスタムタイルURL" hint="例: https://example/{z}/{x}/{y}.png">
+                <input className="input" placeholder="https://.../{z}/{x}/{y}.png" value={map.tileUrl} onChange={(e) => setMap({ ...map, tileUrl: e.target.value })} />
+              </Field>
+            )}
+          </div>
+          <p className="text-xs text-muted mt-3">
+            取得済みの内蔵タイル: {tileStyles.length ? tileStyles.map((id) => getBasemap(id).label).join('・') : 'なし（storage/tilesが空です。backendの npm run tiles で取得できます）'}
+          </p>
+          <div className="mt-4 flex justify-end"><Button variant="primary" icon={<Save className="size-4" />} loading={savingMap} onClick={saveMap}>保存</Button></div>
         </section>
       )}
 

@@ -13,7 +13,7 @@ import {
   BLOCK_LABELS, PAPER_LABELS, defaultTemplate, selectableFieldsForBlock,
 } from '../lib/report';
 import { MapView } from '../components/MapView';
-import { BASEMAPS, DEFAULT_CENTER, DEFAULT_ZOOM, MAP_HEIGHT_LABELS, mapCenter, mapHeightClass, mapZoom, resolveBasemapId, resolveBasemapRuntime, type MapHeight } from '../lib/map';
+import { BASEMAPS, DEFAULT_CENTER, DEFAULT_ZOOM, MAP_HEIGHT_LABELS, SYSTEM_BASEMAP, getBasemap, mapCenter, mapHeightClass, mapZoom, resolveBasemapId, resolveBasemapRuntime, useMapManifest, type MapHeight } from '../lib/map';
 import { Button } from '../components/ui/Button';
 import { Field } from '../components/ui/Field';
 import { Modal } from '../components/ui/Modal';
@@ -525,8 +525,12 @@ function LocationSettings({ value, onChange }: { value: any; onChange: (s: any) 
   const s = value || {};
   const savedCenter = mapCenter(s);
   const savedZoom = mapZoom(s);
+  const manifest = useMapManifest();
+  // 選択欄は保存値をそのまま出す（未指定＝システム設定に従う）。地図の描画は解決後のIDを使う。
+  const selectedId = String(s.basemap || (s.tileUrl ? 'custom' : SYSTEM_BASEMAP));
   const basemapId = resolveBasemapId(s);
   const base = resolveBasemapRuntime(s);
+  const systemLabel = getBasemap(manifest.defaultBasemap).label;
 
   // プレビュー地図の「いま見えている表示」。確定ボタンを押すまで設定値には反映しない。
   const [view, setView] = useState({ lat: savedCenter.lat, lng: savedCenter.lng, zoom: savedZoom });
@@ -549,9 +553,14 @@ function LocationSettings({ value, onChange }: { value: any; onChange: (s: any) 
   return (
     <div className="space-y-3 rounded-lg border border-border p-3 bg-surface-2">
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="背景地図" hint="オフラインで使えるのはDL済みの種別（淡色/標準/航空写真）。オンライン版・カスタムはネット接続時のみ。">
-          <select className="input" value={basemapId} onChange={(e) => onChange({ ...s, basemap: e.target.value })}>
-            {BASEMAPS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+        <Field label="背景地図" hint="オフラインで使えるのはDL済みの種別（淡色/標準/航空写真）。オンライン版・カスタムはネット接続時のみ。閲覧画面では利用者が右上で切り替えられます。">
+          <select className="input" value={selectedId} onChange={(e) => onChange({ ...s, basemap: e.target.value })}>
+            <option value={SYSTEM_BASEMAP}>システム設定に従う（{systemLabel}）</option>
+            {BASEMAPS.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.kind === 'builtin' && !manifest.styles.includes(b.id) ? `${b.label}（タイル未取得）` : b.label}
+              </option>
+            ))}
           </select>
         </Field>
         <Field label="地図の高さ" hint="レコード入力・詳細・一覧の地図タブの表示高さ。「自動」は各画面の既定（一覧は画面に合わせて最大）。">

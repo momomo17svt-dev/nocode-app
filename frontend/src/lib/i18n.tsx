@@ -561,6 +561,21 @@ const EN: Record<string, string> = {
   '投稿': 'Post',
   '同時実行数': 'Concurrent jobs',
   '背景地図': 'Base map',
+  '（タイル未取得）': ' (tiles not downloaded)',
+  'オフラインで使えるのはDL済みの種別（淡色/標準/航空写真）。オンライン版・カスタムはネット接続時のみ。閲覧画面では利用者が右上で切り替えられます。':
+    'Only downloaded styles (pale, standard, aerial) work offline; online and custom styles need a connection. Viewers can switch base maps from the control in the top right.',
+  'システム設定に従う（': 'Follow the system setting (',
+  '既定の背景地図': 'Default base map',
+  '内蔵タイルはオフラインで使えます。オンライン版は配信元へ通信します。':
+    'Bundled tiles work offline. Online styles send requests to their provider.',
+  '位置フィールドの背景地図の既定です。アプリ側で個別に指定していない地図に適用されます。閲覧画面では利用者が右上の切替で変更できます。':
+    'The default base map for location fields. It applies wherever an app does not set its own. Viewers can change it from the control in the top right.',
+  '取得済みの内蔵タイル:': 'Downloaded tile styles:',
+  'なし（storage/tilesが空です。backendの npm run tiles で取得できます）':
+    'none (storage/tiles is empty; run npm run tiles in backend to fetch them)',
+  '地図の設定を保存しました': 'Saved the map settings',
+  '地図タイルが未取得です。右上の切替からオンライン地図を選べます。':
+    'No map tiles are downloaded. Pick an online base map from the control in the top right.',
   '表示する項目（ラベル）': 'Display field (label)',
   '表示する列': 'Columns to display',
   '文書タイトル': 'Document title',

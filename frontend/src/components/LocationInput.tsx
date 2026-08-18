@@ -1,7 +1,7 @@
 import { MapPin, LocateFixed, X } from 'lucide-react';
 import { MapView } from './MapView';
 import type { FieldDef } from '../lib/fields';
-import { isGeoPoint, mapCenter, mapHeightClass, mapZoom, resolveBasemapRuntime, type GeoPoint } from '../lib/map';
+import { isGeoPoint, mapCenter, mapHeightClass, mapZoom, resolveBasemapRuntime, useMapManifest, type GeoPoint } from '../lib/map';
 
 interface Props {
   field: FieldDef;
@@ -33,6 +33,7 @@ export function LocationInput({ field, value, onChange }: Props) {
     );
   };
 
+  useMapManifest();
   const base = resolveBasemapRuntime(field.settings);
 
   return (

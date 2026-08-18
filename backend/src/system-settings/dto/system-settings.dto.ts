@@ -28,6 +28,14 @@ export class UpdateBackupPolicyDto {
   retentionDays!: number;
 }
 
+export class UpdateMapPolicyDto {
+  @IsString() @IsNotEmpty() @MaxLength(50)
+  defaultBasemap!: string;
+
+  @IsOptional() @IsString() @MaxLength(500)
+  tileUrl?: string;
+}
+
 export class CreateApiTokenDto {
   @IsString() @IsNotEmpty() @MaxLength(100)
   name!: string;
