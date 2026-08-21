@@ -1,4 +1,4 @@
-FROM postgres:16-bookworm AS postgres-tools
+FROM postgres:18-bookworm AS postgres-tools
 
 FROM node:22-bookworm-slim AS build
 
